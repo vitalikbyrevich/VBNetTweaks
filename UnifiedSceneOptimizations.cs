@@ -48,7 +48,7 @@ public static class UnifiedSceneOptimizations
             if (!nview.IsOwner())
             {
                 nview.ClaimOwnership();
-                if (SceneDebugEnabled.Value) VBNetTweaks.LogDebug($"Claimed ownership for door: {__instance.name}");
+                if (SceneDebugEnabled.Value) VBNetTweaks.LogVerbose($"Claimed ownership for door: {__instance.name}");
             }
         }
         catch (Exception e)
@@ -102,8 +102,7 @@ public static class UnifiedSceneOptimizations
         netSceneTempRemoved.Clear();
         _zdosToRemove.Clear();
 
-        if (SceneDebugEnabled.Value)
-            VBNetTweaks.LogDebug($"Scene optimization completed: marked {currentNearObjects.Count + currentDistantObjects.Count} objects");
+        if (SceneDebugEnabled.Value) VBNetTweaks.LogVerbose($"Scene optimization completed: marked {currentNearObjects.Count + currentDistantObjects.Count} objects");
     }
 
     private static void MarkObjects(List<ZDO> objects)
@@ -153,8 +152,7 @@ public static class UnifiedSceneOptimizations
         RemoveMarkedViews(netSceneTempRemoved, zdoManager);
         RemoveInvalidZDOs(netSceneInstances, zdoManager);
 
-        if (SceneDebugEnabled.Value && removedCount > 0)
-            VBNetTweaks.LogDebug($"Removed {removedCount} unmarked objects from scene");
+        if (SceneDebugEnabled.Value && removedCount > 0) VBNetTweaks.LogVerbose($"Removed {removedCount} unmarked objects from scene");
     }
 
     private static void RemoveMarkedViews(List<ZNetView> viewsToRemove, ZDOMan zdoManager)

@@ -19,10 +19,9 @@ public static class UnifiedZDOTranspiler
 
     public static CodeMatcher Print(this CodeMatcher codeMatcher, int before, int after, string context = "")
     {
-        if (!VBNetTweaks.DebugEnabled.Value)
-            return codeMatcher;
+        if (!VBNetTweaks.DebugEnabled.Value) return codeMatcher;
 
-        VBNetTweaks.LogDebug($"=== IL Code Dump [{context}] ===");
+        VBNetTweaks.LogVerbose($"=== IL Code Dump [{context}] ===");
         for (int i = -before; i <= after; ++i)
         {
             int index = codeMatcher.Pos + i;
@@ -38,13 +37,12 @@ public static class UnifiedZDOTranspiler
                 VBNetTweaks.LogDebug($"Ошибка чтения инструкции [{i}]: {e.Message}");
             }
         }
-        VBNetTweaks.LogDebug("=== End IL Dump ===");
+        VBNetTweaks.LogVerbose("=== End IL Dump ===");
         return codeMatcher;
     }
 
     public static bool IsVirtCall(this CodeInstruction i, string declaringType, string name) 
-        => i.opcode == OpCodes.Callvirt && i.operand is MethodInfo methodInfo && 
-           methodInfo.DeclaringType?.Name == declaringType && methodInfo.Name == name;
+        => i.opcode == OpCodes.Callvirt && i.operand is MethodInfo methodInfo && methodInfo.DeclaringType?.Name == declaringType && methodInfo.Name == name;
 
     // Главный транспайлер для ZDOMan.Update - ТОЛЬКО ДЛЯ СЕРВЕРА
     [HarmonyTranspiler]
@@ -93,7 +91,7 @@ public static class UnifiedZDOTranspiler
             int peerCount = zdoManager.m_peers.Count;
             if (peerCount <= 0)
             {
-                VBNetTweaks.LogDebug($"No peers to send, count: {peerCount}");
+                VBNetTweaks.LogVerbose($"No peers to send, count: {peerCount}");
                 return;
             }
 
@@ -121,12 +119,13 @@ public static class UnifiedZDOTranspiler
 
                 if (VBNetTweaks.DebugEnabled.Value)
                 {
-                    VBNetTweaks.LogDebug($"Sent ZDOs to {sentCount}/{peerCount} peers " + $"(interval: {sendInterval:F3}s, next: {zdoManager.m_nextSendPeer})");
+                    VBNetTweaks.LogVerbose($"Sent ZDOs to {sentCount}/{peerCount} peers (interval: {sendInterval:F3}s, next: {zdoManager.m_nextSendPeer})");
                 }
+                
             }
             else if (VBNetTweaks.DebugEnabled.Value && peerCount > 0)
             {
-                VBNetTweaks.LogDebug($"Send timer: {zdoManager.m_sendTimer:F3}/{sendInterval:F3}s, " + $"peers: {peerCount}, next: {zdoManager.m_nextSendPeer}");
+                VBNetTweaks.LogVerbose($"Send timer: {zdoManager.m_sendTimer:F3}/{sendInterval:F3}s, peers: {peerCount}, next: {zdoManager.m_nextSendPeer}");
             }
         }
         catch (Exception e)
@@ -146,12 +145,12 @@ public static class UnifiedZDOTranspiler
     {
       //  if (!VBNetTweaks.IsServer) return;
         
-        if (__instance == null || !__instance.IsServer())
+        if (!__instance || !__instance.IsServer())
         {
             peer.m_rpc.Register("ZDOData", (ZRpc rpc, ZPackage pkg) =>
             {
                 _zdoBuffer.Add(pkg);
-                VBNetTweaks.LogDebug($"Buffered ZDOData package, buffer size: {_zdoBuffer.Count}");
+                VBNetTweaks.LogVerbose($"Buffered ZDOData package, buffer size: {_zdoBuffer.Count}");
             });
         }
     }
@@ -163,7 +162,7 @@ public static class UnifiedZDOTranspiler
      //   if (!VBNetTweaks.IsServer) return;
         
         _zdoBuffer.Clear();
-        VBNetTweaks.LogDebug("Cleared ZDO buffer on shutdown");
+        VBNetTweaks.LogVerbose("Cleared ZDO buffer on shutdown");
     }
 
     [HarmonyPostfix]
@@ -174,9 +173,8 @@ public static class UnifiedZDOTranspiler
         
         if (_zdoBuffer.Count > 0)
         {
-            VBNetTweaks.LogDebug($"Processing {_zdoBuffer.Count} buffered ZDO packages for new peer");
-            foreach (var package in _zdoBuffer) 
-                __instance.RPC_ZDOData(netPeer.m_rpc, package);
+            VBNetTweaks.LogVerbose($"Processing {_zdoBuffer.Count} buffered ZDO packages for new peer");
+            foreach (var package in _zdoBuffer) __instance.RPC_ZDOData(netPeer.m_rpc, package);
             _zdoBuffer.Clear();
         }
     }

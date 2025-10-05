@@ -36,7 +36,7 @@ public static class UnifiedZDOfilters
             {
                 if (VBNetTweaks.DebugEnabled.Value)
                 {
-                    VBNetTweaks.LogDebug($"Filtered Vector3 change: " + $"hash={hash}, delta={Mathf.Sqrt(sqrMagnitude):F4}, " + $"from={currentValue}, to={value}");
+                    VBNetTweaks.LogVerbose($"Filtered Vector3 change: " + $"hash={hash}, delta={Mathf.Sqrt(sqrMagnitude):F4}, " + $"from={currentValue}, to={value}");
                 }
                 return false;
             }
@@ -55,7 +55,7 @@ public static class UnifiedZDOfilters
         {
             if (VBNetTweaks.DebugEnabled.Value)
             {
-                VBNetTweaks.LogDebug($"Filtered Quaternion change: " + $"hash={hash}, dot={dot:F4}");
+                VBNetTweaks.LogVerbose($"Filtered Quaternion change: " + $"hash={hash}, dot={dot:F4}");
             }
             return false;
         }
@@ -86,8 +86,7 @@ public static class UnifiedZDOfilters
 
             if (VBNetTweaks.DebugEnabled.Value && (_freezing || _forcing))
             {
-                VBNetTweaks.LogDebug($"ZSyncTransform: " +
-                                     $"freezing={_freezing}, forcing={_forcing}, " + $"netRate={netRate}, object={__instance.name}");
+                VBNetTweaks.LogVerbose($"ZSyncTransform: freezing={_freezing}, forcing={_forcing}, netRate={netRate}, object={__instance.name}");
             }
         }
 
@@ -126,7 +125,7 @@ public static class UnifiedZDOfilters
 
             if (VBNetTweaks.DebugEnabled.Value && (_freezing || _forcing))
             {
-                VBNetTweaks.LogDebug($"Character {__instance.name}: " + $"freezing={_freezing}, forcing={_forcing}");
+                VBNetTweaks.LogVerbose($"Character {__instance.name}: " + $"freezing={_freezing}, forcing={_forcing}");
             }
         }
 

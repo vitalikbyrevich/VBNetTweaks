@@ -26,7 +26,7 @@ public static class UnifiedSteamOptimizations
         int newTransferRate = VBNetTweaks.GetSteamTransferRate();
         matcher.SetInstructionAndAdvance(new CodeInstruction(OpCodes.Ldc_I4, newTransferRate)).Print(1, 1, "Steam transfer rate patched");
 
-        VBNetTweaks.LogDebug($"Steam transfer rate patched: 153600 -> {newTransferRate}");
+        VBNetTweaks.LogVerbose($"Steam transfer rate patched: 153600 -> {newTransferRate}");
 
         return matcher.InstructionEnumeration();
     }
@@ -71,7 +71,7 @@ public static class UnifiedSteamOptimizations
                     });
                     
                     handle.Free();
-                    VBNetTweaks.LogDebug($"Steam send buffer size set to: {bufferSize}");
+                    VBNetTweaks.LogVerbose($"Steam send buffer size set to: {bufferSize}");
                 }
                 else VBNetTweaks.LogDebug("SetConfigValue method not found");
             }

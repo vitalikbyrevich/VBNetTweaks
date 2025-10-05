@@ -9,6 +9,7 @@
 
         // Конфигурационные параметры
         public static ConfigEntry<bool> DebugEnabled;
+        public static ConfigEntry<bool> VerboseLogging;
         public static ConfigEntry<float> SendInterval;
         public static ConfigEntry<int> PeersPerUpdate;
         public static ConfigEntry<float> Vec3CullSize;
@@ -35,6 +36,7 @@
             ConfigurationManagerAttributes isAdminOnly = new ConfigurationManagerAttributes { IsAdminOnly = true };
             
             DebugEnabled = Config.Bind("01 - General", "DebugEnabled", false, new ConfigDescription("Включить отладочный вывод"));
+            VerboseLogging = Config.Bind("01 - General", "VerboseLogging", false, new ConfigDescription("Включить подробное логирование успешных операций"));
 
             // Настройки фильтрации (нужны и клиенту и серверу)
             Vec3CullSize = Config.Bind("02 - Filtering", "Vec3CullSize", 0.05f, new ConfigDescription("Минимальное изменение позиции для отправки"));
@@ -62,7 +64,7 @@
         {
             _harmony?.UnpatchSelf();
         }
-
+        
         // Методы для обновления состояния
         public static void UpdateState(float deltaTime)
         {
@@ -81,6 +83,11 @@
         public static void LogDebug(string message)
         {
             if (DebugEnabled.Value) Debug.Log($"[VBNetTweaks] {message}");
+        }
+
+        public static void LogVerbose(string message)
+        {
+            if (DebugEnabled.Value && VerboseLogging.Value) Debug.Log($"[VBNetTweaks] {message}");
         }
 
         // Методы для безопасного доступа к серверным настройкам
