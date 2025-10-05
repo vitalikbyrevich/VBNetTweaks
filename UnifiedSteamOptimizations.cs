@@ -7,7 +7,12 @@ public static class UnifiedSteamOptimizations
     [HarmonyPatch(typeof(ZSteamSocket), "RegisterGlobalCallbacks")]
     static IEnumerable<CodeInstruction> ZSteamSocket_RegisterGlobalCallbacks_Transpiler(IEnumerable<CodeInstruction> instructions)
     {
-        if (!VBNetTweaks.Enabled.Value) return instructions;
+        // На клиенте не применяем Steam оптимизации
+       /* if (!VBNetTweaks.IsServer)
+        {
+            VBNetTweaks.LogDebug("Steam оптимизации пропущены (клиентский режим)");
+            return instructions;
+        }*/
 
         var matcher = new CodeMatcher(instructions).MatchForward(false, new CodeMatch(OpCodes.Ldc_I4, 153600));
 
@@ -17,7 +22,8 @@ public static class UnifiedSteamOptimizations
             return instructions;
         }
 
-        int newTransferRate = VBNetTweaks.SteamTransferRate.Value;
+        // Используем безопасный метод доступа к настройкам
+        int newTransferRate = VBNetTweaks.GetSteamTransferRate();
         matcher.SetInstructionAndAdvance(new CodeInstruction(OpCodes.Ldc_I4, newTransferRate)).Print(1, 1, "Steam transfer rate patched");
 
         VBNetTweaks.LogDebug($"Steam transfer rate patched: 153600 -> {newTransferRate}");
@@ -29,8 +35,11 @@ public static class UnifiedSteamOptimizations
     [HarmonyPatch(typeof(ZSteamSocket), "RegisterGlobalCallbacks")]
     static void ZSteamSocket_RegisterGlobalCallbacks_Postfix(ZSteamSocket __instance)
     {
-        if (!VBNetTweaks.Enabled.Value)
+        // На клиенте не применяем Steam оптимизации
+      /*  if (!VBNetTweaks.IsServer)
+        {
             return;
+        }*/
 
         try
         {
@@ -49,7 +58,8 @@ public static class UnifiedSteamOptimizations
 
                 if (setConfigValueMethod != null)
                 {
-                    int bufferSize = VBNetTweaks.SteamSendBufferSize.Value;
+                    // Используем безопасный метод доступа к настройкам
+                    int bufferSize = VBNetTweaks.GetSteamSendBufferSize();
                     GCHandle handle = GCHandle.Alloc(bufferSize, GCHandleType.Pinned);
                     
                     setConfigValueMethod.Invoke(null, new object[] {
@@ -63,15 +73,9 @@ public static class UnifiedSteamOptimizations
                     handle.Free();
                     VBNetTweaks.LogDebug($"Steam send buffer size set to: {bufferSize}");
                 }
-                else
-                {
-                    VBNetTweaks.LogDebug("SetConfigValue method not found");
-                }
+                else VBNetTweaks.LogDebug("SetConfigValue method not found");
             }
-            else
-            {
-                VBNetTweaks.LogDebug("SteamNetworkingUtils type not found");
-            }
+            else VBNetTweaks.LogDebug("SteamNetworkingUtils type not found");
         }
         catch (Exception e)
         {

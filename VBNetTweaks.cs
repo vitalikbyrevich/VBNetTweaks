@@ -5,11 +5,9 @@
     {
         private const string ModName = "VBNetTweaks";
         private const string ModVersion = "0.0.1";
-
         private const string ModGUID = "VitByr.VBNetTweaks";
 
         // Конфигурационные параметры
-        public static ConfigEntry<bool> Enabled;
         public static ConfigEntry<bool> DebugEnabled;
         public static ConfigEntry<float> SendInterval;
         public static ConfigEntry<int> PeersPerUpdate;
@@ -20,40 +18,44 @@
         public static ConfigEntry<int> SteamTransferRate;
 
         // Статические переменные
-        public static double NetTime = 0.0;
+        public static double NetTime;
         public static float DeltaTimeFixedPhysics = 0.02f;
         public static float DeltaTimePhysics = 0.01f;
         public static float Vec3CullSizeSq = 0.00025f;
+
 
         private Harmony _harmony;
 
         private void Awake()
         {
-            // Настройки общей сети
-            Enabled = Config.Bind("General", "Enabled", true, "Включить оптимизации сети");
-            DebugEnabled = Config.Bind("General", "DebugEnabled", false, "Включить отладочный вывод");
-            SendInterval = Config.Bind("Network", "SendInterval", 0.05f, "Интервал отправки данных (секунды)");
-            PeersPerUpdate = Config.Bind("Network", "PeersPerUpdate", 1, "Количество пиров для обработки за один апдейт");
+            // Определяем, являемся ли мы сервером
+         //   CheckServerStatus();
 
-            // Настройки фильтрации
-            Vec3CullSize = Config.Bind("Filtering", "Vec3CullSize", 0.05f, "Минимальное изменение позиции для отправки");
-            NetRatePhysics = Config.Bind("Filtering", "NetRatePhysics", 8f, "Частота обновления физических объектов");
-            NetRateNPC = Config.Bind("Filtering", "NetRateNPC", 8f, "Частота обновления NPC");
+            // Всегда создаем основные настройки
+            ConfigurationManagerAttributes isAdminOnly = new ConfigurationManagerAttributes { IsAdminOnly = true };
+            
+            DebugEnabled = Config.Bind("01 - General", "DebugEnabled", false, new ConfigDescription("Включить отладочный вывод"));
 
-            // Настройки Steam
-            SteamSendBufferSize = Config.Bind("Steam", "SendBufferSize", 100000000, "Размер буфера отправки Steam");
-            SteamTransferRate = Config.Bind("Steam", "TransferRate", 50000000, "Лимит передачи данных Steam");
+            // Настройки фильтрации (нужны и клиенту и серверу)
+            Vec3CullSize = Config.Bind("02 - Filtering", "Vec3CullSize", 0.05f, new ConfigDescription("Минимальное изменение позиции для отправки"));
+            NetRatePhysics = Config.Bind("02 - Filtering", "NetRatePhysics", 8f, new ConfigDescription("Частота обновления физических объектов"));
+            NetRateNPC = Config.Bind("02 - Filtering", "NetRateNPC", 8f, new ConfigDescription("Частота обновления NPC"));
 
-            // Применяем настройки
+            SendInterval = Config.Bind("03 - Network", "SendInterval", 0.05f, new ConfigDescription("Интервал отправки данных (секунды) - ТОЛЬКО СЕРВЕР", null, isAdminOnly));
+            PeersPerUpdate = Config.Bind("03 - Network", "PeersPerUpdate", 1, new ConfigDescription("Количество пиров для обработки за один апдейт - ТОЛЬКО СЕРВЕР", null, isAdminOnly));
+            SteamSendBufferSize = Config.Bind("04 - Steam", "SendBufferSize", 100000000, new ConfigDescription("Размер буфера отправки Steam - ТОЛЬКО СЕРВЕР", null, isAdminOnly));
+            SteamTransferRate = Config.Bind("04 - Steam", "TransferRate", 50000000, new ConfigDescription("Лимит передачи данных Steam - ТОЛЬКО СЕРВЕР", null, isAdminOnly));
+            // Настройки сцены (новые!)
+            UnifiedSceneOptimizations.BindSceneConfig(Config);
+            
             Vec3CullSizeSq = Vec3CullSize.Value * Vec3CullSize.Value;
 
-            if (Enabled.Value)
-            {
-                _harmony = Harmony.CreateAndPatchAll(Assembly.GetExecutingAssembly(), "com.yourname.UnifiedNetworkOptimizations");
-                Logger.LogInfo("Unified Network Optimizations загружен!");
+            _harmony = Harmony.CreateAndPatchAll(Assembly.GetExecutingAssembly(), ModGUID);
+            Logger.LogInfo("VBNetTweaks загружен!");
 
-                if (DebugEnabled.Value) Logger.LogInfo("Режим отладки включен");
-            }
+            if (DebugEnabled.Value) Logger.LogInfo("Режим отладки включен");
+            if (UnifiedSceneOptimizations.EnableDoorOwnership.Value) Logger.LogInfo("Оптимизация дверей включена");
+            if (UnifiedSceneOptimizations.EnableSceneOptimizations.Value) Logger.LogInfo("Оптимизация сцены включена");
         }
 
         private void OnDestroy()
@@ -78,11 +80,17 @@
         // Дебаг-логирование
         public static void LogDebug(string message)
         {
-            if (DebugEnabled.Value) Debug.Log($"[UNO] {message}");
+            if (DebugEnabled.Value) Debug.Log($"[VBNetTweaks] {message}");
         }
+
+        // Методы для безопасного доступа к серверным настройкам
+        public static float GetSendInterval() => SendInterval?.Value ?? 0.05f;
+        public static int GetPeersPerUpdate() => PeersPerUpdate?.Value ?? 1;
+        public static int GetSteamSendBufferSize() => SteamSendBufferSize?.Value ?? 100000000;
+        public static int GetSteamTransferRate() => SteamTransferRate?.Value ?? 50000000;
     }
 
-// Патч для обновления времени
+    // Патч для обновления времени
     [HarmonyPatch(typeof(MonoUpdaters), "FixedUpdate")]
     public static class MonoUpdaters_FixedUpdate_Patch
     {

@@ -36,6 +36,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="GlobalUsings.cs" />
+    <Compile Include="UnifiedSceneOptimizations.cs" />
     <Compile Include="UnifiedSteamOptimizations.cs" />
     <Compile Include="UnifiedZDOfilters.cs" />
     <Compile Include="UnifiedZDOTranspiler.cs" />
@@ -70,6 +71,9 @@
     </Reference>
     <Reference Include="gui_framework">
       <HintPath>..\..\..\0lib\gui_framework.dll</HintPath>
+    </Reference>
+    <Reference Include="Jotunn">
+      <HintPath>..\..\..\0lib\Jotunn.dll</HintPath>
     </Reference>
     <Reference Include="netstandard">
       <HintPath>..\..\..\0lib\netstandard.dll</HintPath>
