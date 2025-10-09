@@ -9,22 +9,10 @@ using HarmonyLib;
 public static class UnifiedSceneOptimizations
 {
     // Конфигурационные параметры
-    public static ConfigEntry<bool> EnableDoorOwnership;
-    public static ConfigEntry<bool> EnableSceneOptimizations;
-    public static ConfigEntry<bool> SceneDebugEnabled;
 
     // Переменные для Scenic
     private static readonly List<ZDO> _zdosToRemove = new List<ZDO>(64);
     private static byte _currentFrameMark;
-
-    public static void BindSceneConfig(ConfigFile config)
-    {
-        ConfigurationManagerAttributes isAdminOnly = new ConfigurationManagerAttributes { IsAdminOnly = true };
-
-        EnableDoorOwnership = config.Bind("05 - Scene Optimizations", "EnableDoorOwnership", true, new ConfigDescription("Автоматически забирать ownership при открытии дверей", null, isAdminOnly));
-        EnableSceneOptimizations = config.Bind("05 - Scene Optimizations", "EnableSceneOptimizations", true, new ConfigDescription("Оптимизировать удаление объектов из сцены", null, isAdminOnly));
-        SceneDebugEnabled = config.Bind("05 - Scene Optimizations", "SceneDebugEnabled", false, new ConfigDescription("Включить отладочный вывод для сцены", null, isAdminOnly));
-    }
 
     // =========================================================================
     // OPEN SESAME - Оптимизированная версия
@@ -34,7 +22,9 @@ public static class UnifiedSceneOptimizations
     [HarmonyPatch(typeof(Door), nameof(Door.Open))]
     public static void Door_Open_Prefix(Door __instance)
     {
-        if (!EnableDoorOwnership.Value) return;
+        // Используем безопасный геттер вместо прямого доступа
+        if (Helper.IsServer()) return;
+       // if (!VBNetTweaks.GetEnableDoorOwnership()) return;
 
         try
         {
@@ -48,13 +38,13 @@ public static class UnifiedSceneOptimizations
             if (!nview.IsOwner())
             {
                 nview.ClaimOwnership();
-                if (SceneDebugEnabled.Value) VBNetTweaks.LogVerbose($"Claimed ownership for door: {__instance.name}");
+                if (VBNetTweaks.GetSceneDebugEnabled()) VBNetTweaks.LogVerbose($"Claimed ownership for door: {__instance.name}");
             }
         }
         catch (Exception e)
         {
             // Тихая обработка ошибок чтобы не ломать открытие дверей
-            if (SceneDebugEnabled.Value) VBNetTweaks.LogDebug($"Door ownership error: {e.Message}");
+            if (VBNetTweaks.GetSceneDebugEnabled()) VBNetTweaks.LogDebug($"Door ownership error: {e.Message}");
         }
     }
 
@@ -66,8 +56,6 @@ public static class UnifiedSceneOptimizations
     [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.RemoveObjects))]
     static bool RemoveObjectsPrefix(ZNetScene __instance, List<ZDO> currentNearObjects, List<ZDO> currentDistantObjects)
     {
-        if (!EnableSceneOptimizations.Value) return true;
-
         try
         {
             OptimizedRemoveObjects(__instance, currentNearObjects, currentDistantObjects);
@@ -102,7 +90,7 @@ public static class UnifiedSceneOptimizations
         netSceneTempRemoved.Clear();
         _zdosToRemove.Clear();
 
-        if (SceneDebugEnabled.Value) VBNetTweaks.LogVerbose($"Scene optimization completed: marked {currentNearObjects.Count + currentDistantObjects.Count} objects");
+        if (VBNetTweaks.GetSceneDebugEnabled()) VBNetTweaks.LogVerbose($"Scene optimization completed: marked {currentNearObjects.Count + currentDistantObjects.Count} objects");
     }
 
     private static void MarkObjects(List<ZDO> objects)
@@ -152,7 +140,7 @@ public static class UnifiedSceneOptimizations
         RemoveMarkedViews(netSceneTempRemoved, zdoManager);
         RemoveInvalidZDOs(netSceneInstances, zdoManager);
 
-        if (SceneDebugEnabled.Value && removedCount > 0) VBNetTweaks.LogVerbose($"Removed {removedCount} unmarked objects from scene");
+        if (VBNetTweaks.GetSceneDebugEnabled() && removedCount > 0) VBNetTweaks.LogVerbose($"Removed {removedCount} unmarked objects from scene");
     }
 
     private static void RemoveMarkedViews(List<ZNetView> viewsToRemove, ZDOMan zdoManager)
@@ -160,7 +148,7 @@ public static class UnifiedSceneOptimizations
         for (int i = 0, count = viewsToRemove.Count; i < count; i++)
         {
             var netView = viewsToRemove[i];
-            if (netView == null) continue;
+            if (!netView) continue;
 
             var zdo = netView.m_zdo;
             if (zdo == null) continue;
@@ -180,36 +168,9 @@ public static class UnifiedSceneOptimizations
             var zdo = _zdosToRemove[i];
             if (zdo == null) continue;
             
-            if (!zdo.Persistent && zdo.Owner)
-            {
-                zdoManager.m_destroySendList.Add(zdo.m_uid);
-            }
+            if (!zdo.Persistent && zdo.Owner) zdoManager.m_destroySendList.Add(zdo.m_uid);
 
             instances.Remove(zdo);
-        }
-    }
-
-    // =========================================================================
-    // ДОПОЛНИТЕЛЬНЫЕ ОПТИМИЗАЦИИ СЦЕНЫ
-    // =========================================================================
-
-    [HarmonyPrefix]
-    [HarmonyPatch(typeof(ZNetScene), "Update")]
-    static void ZNetScene_Update_Prefix(ZNetScene __instance)
-    {
-        if (!EnableSceneOptimizations.Value) return;
-
-        // Дополнительные оптимизации частоты обновления сцены
-        OptimizeSceneUpdate(__instance);
-    }
-
-    private static void OptimizeSceneUpdate(ZNetScene netScene)
-    {
-        // Оптимизация: уменьшаем частоту некоторых проверок
-        // на слабых серверах или при большом количестве игроков
-        if (Time.frameCount % 2 == 0) // Выполняем каждые 2 кадра
-        {
-            // Можно добавить дополнительные оптимизации здесь
         }
     }
 }

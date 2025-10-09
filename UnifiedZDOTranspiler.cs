@@ -49,13 +49,6 @@ public static class UnifiedZDOTranspiler
     [HarmonyPatch(typeof(ZDOMan), "Update")]
     static IEnumerable<CodeInstruction> ZDOManUpdateTranspiler(IEnumerable<CodeInstruction> instructions)
     {
-        // Если не сервер, возвращаем оригинальные инструкции
-     /*   if (!VBNetTweaks.IsServer)
-        {
-            VBNetTweaks.LogDebug("ZDOMan.Update патч пропущен (клиентский режим)");
-            return instructions;
-        }*/
-
         var matcher = new CodeMatcher(instructions).Start().Print(3, 3, "ZDOMan.Update - Start");
 
         // Ищем вызов SendZDOToPeers2
@@ -82,12 +75,6 @@ public static class UnifiedZDOTranspiler
     {
         try
         {
-        // Дополнительная проверка на сервер (на всякий случай)
-        /*  if (!VBNetTweaks.IsServer)
-          {
-              zdoManager.SendZDOToPeers2(dt);
-              return;
-          }*/
             int peerCount = zdoManager.m_peers.Count;
             if (peerCount <= 0)
             {
@@ -143,7 +130,7 @@ public static class UnifiedZDOTranspiler
     [HarmonyPatch(typeof(ZNet), "OnNewConnection")]
     private static void ZNet_OnNewConnection_Postfix(ZNet __instance, ZNetPeer peer)
     {
-      //  if (!VBNetTweaks.IsServer) return;
+        if (!Helper.IsServer()) return;
         
         if (!__instance || !__instance.IsServer())
         {
@@ -159,7 +146,7 @@ public static class UnifiedZDOTranspiler
     [HarmonyPatch(typeof(ZNet), "Shutdown")]
     private static void ZNet_Shutdown_Postfix()
     {
-     //   if (!VBNetTweaks.IsServer) return;
+        if (!Helper.IsServer()) return;
         
         _zdoBuffer.Clear();
         VBNetTweaks.LogVerbose("Cleared ZDO buffer on shutdown");
@@ -169,7 +156,7 @@ public static class UnifiedZDOTranspiler
     [HarmonyPatch(typeof(ZDOMan), "AddPeer")]
     private static void ZDOMan_AddPeer_Postfix(ZDOMan __instance, ZNetPeer netPeer)
     {
-     //   if (!VBNetTweaks.IsServer) return;
+        if (!Helper.IsServer()) return;
         
         if (_zdoBuffer.Count > 0)
         {

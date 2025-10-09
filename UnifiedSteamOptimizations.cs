@@ -4,16 +4,9 @@
 public static class UnifiedSteamOptimizations
 {
     [HarmonyTranspiler]
-    [HarmonyPatch(typeof(ZSteamSocket), "RegisterGlobalCallbacks")]
+    [HarmonyPatch(typeof(ZSteamSocket), nameof(ZSteamSocket.RegisterGlobalCallbacks))]
     static IEnumerable<CodeInstruction> ZSteamSocket_RegisterGlobalCallbacks_Transpiler(IEnumerable<CodeInstruction> instructions)
     {
-        // На клиенте не применяем Steam оптимизации
-       /* if (!VBNetTweaks.IsServer)
-        {
-            VBNetTweaks.LogDebug("Steam оптимизации пропущены (клиентский режим)");
-            return instructions;
-        }*/
-
         var matcher = new CodeMatcher(instructions).MatchForward(false, new CodeMatch(OpCodes.Ldc_I4, 153600));
 
         if (matcher.IsInvalid)
@@ -23,7 +16,7 @@ public static class UnifiedSteamOptimizations
         }
 
         // Используем безопасный метод доступа к настройкам
-        int newTransferRate = VBNetTweaks.GetSteamTransferRate();
+        int newTransferRate = 50000000;
         matcher.SetInstructionAndAdvance(new CodeInstruction(OpCodes.Ldc_I4, newTransferRate)).Print(1, 1, "Steam transfer rate patched");
 
         VBNetTweaks.LogVerbose($"Steam transfer rate patched: 153600 -> {newTransferRate}");
@@ -32,15 +25,9 @@ public static class UnifiedSteamOptimizations
     }
 
     [HarmonyPostfix]
-    [HarmonyPatch(typeof(ZSteamSocket), "RegisterGlobalCallbacks")]
+    [HarmonyPatch(typeof(ZSteamSocket), nameof(ZSteamSocket.RegisterGlobalCallbacks))]
     static void ZSteamSocket_RegisterGlobalCallbacks_Postfix(ZSteamSocket __instance)
     {
-        // На клиенте не применяем Steam оптимизации
-      /*  if (!VBNetTweaks.IsServer)
-        {
-            return;
-        }*/
-
         try
         {
             // ВАРИАНТ ЧЕРЕЗ РЕФЛЕКСИЮ - самый надежный
@@ -59,7 +46,7 @@ public static class UnifiedSteamOptimizations
                 if (setConfigValueMethod != null)
                 {
                     // Используем безопасный метод доступа к настройкам
-                    int bufferSize = VBNetTweaks.GetSteamSendBufferSize();
+                    int bufferSize = 100000000;
                     GCHandle handle = GCHandle.Alloc(bufferSize, GCHandleType.Pinned);
                     
                     setConfigValueMethod.Invoke(null, new object[] {

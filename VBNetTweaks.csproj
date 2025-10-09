@@ -36,9 +36,9 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="GlobalUsings.cs" />
+    <Compile Include="Helper.cs" />
     <Compile Include="UnifiedSceneOptimizations.cs" />
     <Compile Include="UnifiedSteamOptimizations.cs" />
-    <Compile Include="UnifiedZDOfilters.cs" />
     <Compile Include="UnifiedZDOTranspiler.cs" />
     <Compile Include="VBNetTweaks.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
