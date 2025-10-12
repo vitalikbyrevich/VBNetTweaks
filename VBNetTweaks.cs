@@ -4,7 +4,7 @@
     public class VBNetTweaks : BaseUnityPlugin
     {
         private const string ModName = "VBNetTweaks";
-        private const string ModVersion = "0.0.4";
+        private const string ModVersion = "0.0.5";
         private const string ModGUID = "VitByr.VBNetTweaks";
 
         public static ConfigEntry<bool> DebugEnabled;
@@ -50,7 +50,7 @@
                 ConfigurationManagerAttributes isAdminOnly = new ConfigurationManagerAttributes { IsAdminOnly = true };
                 
                 SendInterval = Config.Bind("02 - Network", "SendInterval", 0.05f, new ConfigDescription("Интервал отправки данных (секунды) - ТОЛЬКО СЕРВЕР", null, isAdminOnly));
-                PeersPerUpdate = Config.Bind("02 - Network", "PeersPerUpdate", 10, new ConfigDescription("Количество пиров для обработки за один апдейт - ТОЛЬКО СЕРВЕР", null, isAdminOnly));
+                PeersPerUpdate = Config.Bind("02 - Network", "PeersPerUpdate", 20, new ConfigDescription("Количество пиров для обработки за один апдейт - ТОЛЬКО СЕРВЕР", null, isAdminOnly));
                SceneDebugEnabled = Config.Bind("03 - Scene Optimizations", "SceneDebugEnabled", false, new ConfigDescription("Включить отладочный вывод для сцены", null, isAdminOnly));
 
                 
@@ -90,6 +90,6 @@
         
         // Методы для безопасного доступа к серверным настройкам
         public static float GetSendInterval() => _serverConfigsInitialized ? SendInterval?.Value ?? 0.05f : 0.05f;
-        public static int GetPeersPerUpdate() => _serverConfigsInitialized ? PeersPerUpdate?.Value ?? 20 : 20;
+        public static int GetPeersPerUpdate() => _serverConfigsInitialized ? PeersPerUpdate?.Value ?? 15 : 15;
     }
 }
