@@ -37,6 +37,8 @@
   <ItemGroup>
     <Compile Include="GlobalUsings.cs" />
     <Compile Include="Helper.cs" />
+    <Compile Include="NetSyncClient.cs" />
+    <Compile Include="NetSyncServer.cs" />
     <Compile Include="UnifiedSceneOptimizations.cs" />
     <Compile Include="UnifiedSteamOptimizations.cs" />
     <Compile Include="UnifiedZDOTranspiler.cs" />

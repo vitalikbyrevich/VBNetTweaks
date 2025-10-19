@@ -1,10 +1,12 @@
-﻿namespace VBNetTweaks
+﻿using Jotunn.Extensions;
+
+namespace VBNetTweaks
 {
     [BepInPlugin(ModGUID, ModName, ModVersion)]
     public class VBNetTweaks : BaseUnityPlugin
     {
         private const string ModName = "VBNetTweaks";
-        private const string ModVersion = "0.0.5";
+        private const string ModVersion = "0.0.7";
         private const string ModGUID = "VitByr.VBNetTweaks";
 
         public static ConfigEntry<bool> DebugEnabled;
@@ -12,6 +14,7 @@
         public static ConfigEntry<float> SendInterval;
         public static ConfigEntry<int> PeersPerUpdate;
         public static ConfigEntry<bool> SceneDebugEnabled;
+        public static ConfigEntry<bool> EnableNetSync;
 
         public static double NetTime;
         public static float DeltaTimeFixedPhysics = 0.02f;
@@ -47,11 +50,10 @@
             // Инициализируем серверные настройки
             if (Helper.IsServer())
             {
-                ConfigurationManagerAttributes isAdminOnly = new ConfigurationManagerAttributes { IsAdminOnly = true };
-                
-                SendInterval = Config.Bind("02 - Network", "SendInterval", 0.05f, new ConfigDescription("Интервал отправки данных (секунды) - ТОЛЬКО СЕРВЕР", null, isAdminOnly));
-                PeersPerUpdate = Config.Bind("02 - Network", "PeersPerUpdate", 20, new ConfigDescription("Количество пиров для обработки за один апдейт - ТОЛЬКО СЕРВЕР", null, isAdminOnly));
-               SceneDebugEnabled = Config.Bind("03 - Scene Optimizations", "SceneDebugEnabled", false, new ConfigDescription("Включить отладочный вывод для сцены", null, isAdminOnly));
+                EnableNetSync = Config.BindConfig("02 - Network", "EnableNetSync", true, "Включить новую систему синхронизации NetSync", synced: true);
+                SendInterval = Config.BindConfig("02 - Network", "SendInterval", 0.05f, "Интервал отправки данных (секунды) - ТОЛЬКО СЕРВЕР", synced: true);
+                PeersPerUpdate = Config.BindConfig("02 - Network", "PeersPerUpdate", 20, "Количество пиров для обработки за один апдейт - ТОЛЬКО СЕРВЕР", synced: true);
+                SceneDebugEnabled = Config.BindConfig("03 - Scene Optimizations", "SceneDebugEnabled", false, "Включить отладочный вывод для сцены", synced: true);
 
                 
                 _serverConfigsInitialized = true;
@@ -90,6 +92,6 @@
         
         // Методы для безопасного доступа к серверным настройкам
         public static float GetSendInterval() => _serverConfigsInitialized ? SendInterval?.Value ?? 0.05f : 0.05f;
-        public static int GetPeersPerUpdate() => _serverConfigsInitialized ? PeersPerUpdate?.Value ?? 15 : 15;
+        public static int GetPeersPerUpdate() => _serverConfigsInitialized ? PeersPerUpdate?.Value ?? 35 : 35;
     }
 }

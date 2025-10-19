@@ -3,6 +3,11 @@
 [HarmonyPatch]
 public static class UnifiedZDOTranspiler
 {
+    private static bool ShouldApplyOldOptimizations()
+    {
+        return !(VBNetTweaks.EnableNetSync?.Value ?? false) && !NetSyncServer._isInitialized;
+    }
+    
     // Инструменты отладки (из ZRpcPatch)
     public static CodeMatcher GetPosition(this CodeMatcher codeMatcher, out int position)
     {
@@ -49,6 +54,9 @@ public static class UnifiedZDOTranspiler
     [HarmonyPatch(typeof(ZDOMan), "Update")]
     static IEnumerable<CodeInstruction> ZDOManUpdateTranspiler(IEnumerable<CodeInstruction> instructions)
     {
+        // ЕСЛИ активна новая система NetSync - НЕ применяем старые оптимизации
+        if (!ShouldApplyOldOptimizations()) return instructions;
+        
         var matcher = new CodeMatcher(instructions).Start().Print(3, 3, "ZDOMan.Update - Start");
 
         // Ищем вызов SendZDOToPeers2
@@ -131,6 +139,8 @@ public static class UnifiedZDOTranspiler
     private static void ZNet_OnNewConnection_Postfix(ZNet __instance, ZNetPeer peer)
     {
         if (!Helper.IsServer()) return;
+        
+        if (!ShouldApplyOldOptimizations()) return;
         
         if (!__instance || !__instance.IsServer())
         {
