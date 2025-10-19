@@ -37,6 +37,7 @@
   <ItemGroup>
     <Compile Include="GlobalUsings.cs" />
     <Compile Include="Helper.cs" />
+    <None Include="InventoryOptimization.cs" />
     <Compile Include="NetSyncClient.cs" />
     <Compile Include="NetSyncServer.cs" />
     <Compile Include="UnifiedSceneOptimizations.cs" />

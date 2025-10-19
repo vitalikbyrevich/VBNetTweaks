@@ -14,7 +14,7 @@ public static class NetSyncServer
     public static float NearRadius = 40f;
     public static float MidRadius = 120f;
     public static float FarRadius = 250f;
-    
+
     public static int MidSkipTicks => Mathf.Max(1, (int)(VBNetTweaks.GetSendInterval() * 10f) - 1);
     public static int FarSkipTicks => Mathf.Max(3, (int)(VBNetTweaks.GetSendInterval() * 20f) - 1);
 
@@ -30,7 +30,11 @@ public static class NetSyncServer
     {
         if (!Helper.IsServer() || !_isInitialized) return;
 
-        float tickInterval = 1f / TickRateHz;
+        // Используем адаптивный TickRate вместо фиксированного
+        int playerCount = __instance.m_peers?.Count ?? 0;
+        int adaptiveTickRate = GetAdaptiveTickRate(playerCount);
+        float tickInterval = 1f / adaptiveTickRate;
+
         _tickAccum += Time.deltaTime;
 
         while (_tickAccum >= tickInterval)
@@ -41,9 +45,6 @@ public static class NetSyncServer
         }
     }
 
-    // ИСПРАВЛЕННЫЙ метод - безопасная инициализация
-    // В методе ZNet_Awake_Postfix в NetSyncServer.cs:
-    // В NetSyncServer.cs - упрощенная инициализация
     [HarmonyPostfix]
     [HarmonyPatch(typeof(ZNet), "Awake")]
     public static void ZNet_Awake_Postfix(ZNet __instance)
@@ -62,20 +63,16 @@ public static class NetSyncServer
         }
     }
 
-// В методе SendTick отправляем напрямую peer RPC:
-   
-
-    // Альтернативная инициализация - если Awake не сработал
     [HarmonyPostfix]
     [HarmonyPatch(typeof(ZNet), "Start")]
     public static void ZNet_Start_Postfix(ZNet __instance)
     {
         if (_isInitialized) return;
-        
+
         try
         {
             if (__instance == null || !__instance.IsServer()) return;
-            
+
             if (__instance.m_routedRpc != null)
             {
                 __instance.m_routedRpc.Register<ZRpc>("VBNT_RequestFullSync", OnRequestFullSync);
@@ -87,6 +84,43 @@ public static class NetSyncServer
         {
             VBNetTweaks.LogDebug($"Error in ZNet_Start_Postfix: {e.Message}");
         }
+    }
+
+    // ОПТИМИЗАЦИЯ 1: Приоритизация по дистанции
+    private static float GetSendIntervalByDistance(float distance)
+    {
+        return distance switch
+        {
+            < 30f => 0.03f, // Близкие объекты - чаще (33 Гц)
+            < 70f => 0.05f, // Средняя дистанция (20 Гц)
+            < 120f => 0.1f, // Далёкие объекты (10 Гц)
+            _ => 0.2f // Очень далёкие - редко (5 Гц)
+        };
+    }
+
+// ОПТИМИЗАЦИЯ 2: Адаптивный TickRate
+    private static int GetAdaptiveTickRate(int playerCount)
+    {
+        return playerCount switch
+        {
+            < 10 => 30, // 30 Гц - плавно
+            < 25 => 20, // 20 Гц - нормально  
+            < 40 => 15, // 15 Гц - приемлемо
+            _ => 10 // 10 Гц - минимально для игры
+        };
+    }
+
+// ОПТИМИЗАЦИЯ 3: Адаптивное количество пиров за тик
+    private static int GetPeersPerTick(int playerCount)
+    {
+        return playerCount switch
+        {
+            < 10 => 8, // 10 игроков: 8 пиров/тик
+            < 20 => 6, // 20 игроков: 6 пиров/тик  
+            < 30 => 4, // 30 игроков: 4 пира/тик
+            < 40 => 3, // 40 игроков: 3 пира/тик
+            _ => 2 // 50+ игроков: 2 пира/тик
+        };
     }
 
     private static void OnRequestFullSync(long l, ZRpc zRpc)
@@ -113,6 +147,11 @@ public static class NetSyncServer
             var allZDOs = zdoMan.m_objectsByID;
             if (allZDOs == null || allZDOs.Count == 0) return;
 
+            // ОПТИМИЗАЦИЯ 2: Адаптивный TickRate
+            int playerCount = peers.Count;
+            int adaptiveTickRate = GetAdaptiveTickRate(playerCount);
+            float tickInterval = 1f / adaptiveTickRate;
+
             // Оптимизация: предварительный расчет квадратов расстояний
             float nearSqr = NearRadius * NearRadius;
             float midSqr = MidRadius * MidRadius;
@@ -127,6 +166,7 @@ public static class NetSyncServer
                 var batch = new List<byte>(4096);
                 int sent = 0;
 
+                // ОПТИМИЗАЦИЯ 1: Приоритизация по дистанции
                 foreach (var kv in allZDOs)
                 {
                     var zdo = kv.Value;
@@ -135,27 +175,29 @@ public static class NetSyncServer
                     Vector3 pos = zdo.m_position;
                     float distSqr = (pos - peerPos).sqrMagnitude;
 
-                    // Приоритизация по дистанции
+                    // Приоритизация по дистанции с адаптивными интервалами
                     bool sendNow;
                     ZoneClass zone;
-                    if (distSqr <= nearSqr) 
-                    { 
-                        sendNow = true; 
-                        zone = ZoneClass.Near; 
+                    float sendInterval = GetSendIntervalByDistance(Mathf.Sqrt(distSqr));
+
+                    if (distSqr <= nearSqr)
+                    {
+                        sendNow = (tick % Mathf.Max(1, (int)(sendInterval * adaptiveTickRate)) == 0);
+                        zone = ZoneClass.Near;
                     }
-                    else if (distSqr <= midSqr) 
-                    { 
-                        sendNow = (tick % (MidSkipTicks + 1) == 0); 
-                        zone = ZoneClass.Mid; 
+                    else if (distSqr <= midSqr)
+                    {
+                        sendNow = (tick % Mathf.Max(2, (int)(sendInterval * adaptiveTickRate)) == 0);
+                        zone = ZoneClass.Mid;
                     }
-                    else if (distSqr <= farSqr) 
-                    { 
-                        sendNow = (tick % (FarSkipTicks + 1) == 0); 
-                        zone = ZoneClass.Far; 
+                    else if (distSqr <= farSqr)
+                    {
+                        sendNow = (tick % Mathf.Max(3, (int)(sendInterval * adaptiveTickRate)) == 0);
+                        zone = ZoneClass.Far;
                     }
-                    else 
-                    { 
-                        continue; 
+                    else
+                    {
+                        continue;
                     }
 
                     if (!sendNow) continue;
@@ -184,6 +226,11 @@ public static class NetSyncServer
                     }
                 }
 
+                // ОПТИМИЗАЦИЯ 3: Адаптивное количество пиров за тик
+                int startPeer = Math.Max(zdoMan.m_nextSendPeer, 0);
+                int peersPerTick = GetPeersPerTick(playerCount);
+                int endPeer = Math.Min(startPeer + peersPerTick, playerCount);
+
                 // Отправляем батч если есть данные
                 if (sent > 0 && batch.Count > 0)
                 {
@@ -191,18 +238,24 @@ public static class NetSyncServer
                     {
                         var pkg = new ZPackage();
                         pkg.Write(batch.ToArray());
-                
+
                         // Отправляем напрямую через peer RPC
                         peer.m_peer.m_rpc.Invoke("VBNT_DeltaBatch", pkg);
-                
+
                         if (VBNetTweaks.DebugEnabled.Value && VBNetTweaks.VerboseLogging.Value && tick % 60 == 0)
-                            VBNetTweaks.LogVerbose($"Tick {tick}: sent {sent} deltas, size: {batch.Count} bytes");
+                        {
+                            VBNetTweaks.LogVerbose($"Tick {tick}: {sent} deltas, {playerCount} players, " +
+                                                   $"{peersPerTick} peers/tick, {adaptiveTickRate}Hz");
+                        }
                     }
                     catch (Exception e)
                     {
                         VBNetTweaks.LogDebug($"Error sending delta batch: {e.Message}");
                     }
                 }
+
+                // Обновляем указатель для следующего тика
+                zdoMan.m_nextSendPeer = (endPeer < playerCount) ? endPeer : 0;
             }
         }
         catch (Exception e)
@@ -211,7 +264,12 @@ public static class NetSyncServer
         }
     }
 
-    public enum ZoneClass { Near, Mid, Far }
+    public enum ZoneClass
+    {
+        Near,
+        Mid,
+        Far
+    }
 
     private struct ServerSnapshot
     {
@@ -224,8 +282,8 @@ public static class NetSyncServer
         public static ServerSnapshot FromZDO(ZDO z)
         {
             if (z == null) return Empty;
-            
-            return new ServerSnapshot 
+
+            return new ServerSnapshot
             {
                 Pos = z.m_position,
                 Rot = z.GetRotation(),
@@ -257,38 +315,38 @@ public static class NetSyncServer
             var delta = new Delta();
 
             // Позиция - проверяем значимое изменение
-            if ((curr.Pos - prev.Pos).sqrMagnitude > 0.0001f) 
-            { 
-                delta.Pos = curr.Pos; 
-                mask |= 1; 
+            if ((curr.Pos - prev.Pos).sqrMagnitude > 0.0001f)
+            {
+                delta.Pos = curr.Pos;
+                mask |= 1;
             }
-            
+
             // Вращение - проверяем значимое изменение
-            if (Quaternion.Angle(curr.Rot, prev.Rot) > 0.5f) 
-            { 
-                delta.Rot = curr.Rot; 
-                mask |= 2; 
+            if (Quaternion.Angle(curr.Rot, prev.Rot) > 0.5f)
+            {
+                delta.Rot = curr.Rot;
+                mask |= 2;
             }
-            
+
             // Скорость
-            if ((curr.Vel - prev.Vel).sqrMagnitude > 0.0001f) 
-            { 
-                delta.Vel = curr.Vel; 
-                mask |= 4; 
+            if ((curr.Vel - prev.Vel).sqrMagnitude > 0.0001f)
+            {
+                delta.Vel = curr.Vel;
+                mask |= 4;
             }
-            
+
             // HP
-            if (curr.HP != prev.HP) 
-            { 
-                delta.HP = curr.HP; 
-                mask |= 8; 
+            if (curr.HP != prev.HP)
+            {
+                delta.HP = curr.HP;
+                mask |= 8;
             }
-            
+
             // Флаги
-            if (curr.Flags != prev.Flags) 
-            { 
-                delta.Flags = curr.Flags; 
-                mask |= 16; 
+            if (curr.Flags != prev.Flags)
+            {
+                delta.Flags = curr.Flags;
+                mask |= 16;
             }
 
             delta.Mask = mask;
@@ -309,10 +367,10 @@ public static class NetSyncServer
             if ((delta.Mask & 16) != 0) WriteUInt(buffer, delta.Flags);
         }
 
-        private static void WriteID(List<byte> buffer, ZDOID id) 
-        { 
-            WriteLong(buffer, id.UserID); 
-            WriteUInt(buffer, id.ID); 
+        private static void WriteID(List<byte> buffer, ZDOID id)
+        {
+            WriteLong(buffer, id.UserID);
+            WriteUInt(buffer, id.ID);
         }
 
         private static void WriteVec3Q(List<byte> buffer, Vector3 v, float step)
@@ -330,8 +388,8 @@ public static class NetSyncServer
             buffer.Add((byte)((q.w * 0.5f + 0.5f) * 255));
         }
 
-        private static void WriteShort(List<byte> buffer, short value) 
-        { 
+        private static void WriteShort(List<byte> buffer, short value)
+        {
             buffer.Add((byte)(value & 0xFF));
             buffer.Add((byte)((value >> 8) & 0xFF));
         }

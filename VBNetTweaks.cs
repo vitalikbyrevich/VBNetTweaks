@@ -92,6 +92,21 @@ namespace VBNetTweaks
         
         // Методы для безопасного доступа к серверным настройкам
         public static float GetSendInterval() => _serverConfigsInitialized ? SendInterval?.Value ?? 0.05f : 0.05f;
-        public static int GetPeersPerUpdate() => _serverConfigsInitialized ? PeersPerUpdate?.Value ?? 35 : 35;
+        public static int GetPeersPerUpdate() 
+        {
+            if (!_serverConfigsInitialized) return 5; // По умолчанию консервативно
+    
+            int playerCount = ZNet.instance.GetPeerConnections();
+    
+            // Адаптивная логика в зависимости от онлайна
+            return playerCount switch
+            {
+                < 10 => 8,    // Мало игроков - можно больше
+                < 20 => 6,    // Средний онлайн
+                < 30 => 4,    // Многолюдно
+                < 40 => 3,    // Очень многолюдно
+                _ => 2        // Максимальная нагрузка
+            };
+        }
     }
 }
