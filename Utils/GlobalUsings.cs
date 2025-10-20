@@ -8,3 +8,4 @@ global using System;
 global using System.Collections.Generic;
 global using System.Reflection.Emit;
 global using Steamworks;
+global using System.Linq;

@@ -1,13 +1,10 @@
-﻿namespace VBNetTweaks;
+﻿using VBNetTweaks.Utils;
+
+namespace VBNetTweaks;
 
 [HarmonyPatch]
 public static class UnifiedZDOTranspiler
 {
-    private static bool ShouldApplyOldOptimizations()
-    {
-        return !(VBNetTweaks.EnableNetSync?.Value ?? false) && !NetSyncServer._isInitialized;
-    }
-    
     // Инструменты отладки (из ZRpcPatch)
     public static CodeMatcher GetPosition(this CodeMatcher codeMatcher, out int position)
     {
@@ -54,9 +51,6 @@ public static class UnifiedZDOTranspiler
     [HarmonyPatch(typeof(ZDOMan), "Update")]
     static IEnumerable<CodeInstruction> ZDOManUpdateTranspiler(IEnumerable<CodeInstruction> instructions)
     {
-        // ЕСЛИ активна новая система NetSync - НЕ применяем старые оптимизации
-        if (!ShouldApplyOldOptimizations()) return instructions;
-        
         var matcher = new CodeMatcher(instructions).Start().Print(3, 3, "ZDOMan.Update - Start");
 
         // Ищем вызов SendZDOToPeers2
@@ -80,56 +74,64 @@ public static class UnifiedZDOTranspiler
 
     // Оптимизированная версия SendZDOToPeers - ТОЛЬКО ДЛЯ СЕРВЕРА
     public static void OptimizedSendZDOToPeers(ZDOMan zdoManager, float dt)
+{
+    try
     {
-        try
+        int peerCount = zdoManager.m_peers.Count;
+        if (peerCount <= 0)
         {
-            int peerCount = zdoManager.m_peers.Count;
-            if (peerCount <= 0)
+            VBNetTweaks.LogVerbose($"No peers to send, count: {peerCount}");
+            return;
+        }
+
+        zdoManager.m_sendTimer += dt;
+
+        // ИСПОЛЬЗОВАТЬ адаптивный интервал
+        float sendInterval = AdaptiveOptimizationManager.GetSendInterval();
+        
+        if (zdoManager.m_sendTimer >= sendInterval)
+        {
+            zdoManager.m_sendTimer = 0f;
+            List<ZDOMan.ZDOPeer> peers = zdoManager.m_peers;
+
+            int startPeer = Math.Max(zdoManager.m_nextSendPeer, 0);
+            
+            // ИСПОЛЬЗОВАТЬ адаптивное количество пиров
+            int peersPerUpdate = AdaptiveOptimizationManager.GetPeersPerUpdate();
+            
+            // Дополнительная оптимизация для высоких нагрузок
+            if (peerCount > 50) peersPerUpdate = Math.Min(peersPerUpdate, Math.Max(1, peerCount / 25));
+            
+            int endPeer = Math.Min(startPeer + peersPerUpdate, peerCount);
+
+            int sentCount = 0;
+            for (int i = 0; i < peers.Count; i++)
             {
-                VBNetTweaks.LogVerbose($"No peers to send, count: {peerCount}");
-                return;
-            }
-
-            zdoManager.m_sendTimer += dt;
-
-            // Используем безопасный метод доступа к настройкам
-            float sendInterval = VBNetTweaks.GetSendInterval();
-            if (zdoManager.m_sendTimer >= sendInterval)
-            {
-                zdoManager.m_sendTimer = 0f;
-                List<ZDOMan.ZDOPeer> peers = zdoManager.m_peers;
-
-                int startPeer = Math.Max(zdoManager.m_nextSendPeer, 0);
-                int peersPerUpdate = VBNetTweaks.GetPeersPerUpdate();
-                int endPeer = Math.Min(startPeer + peersPerUpdate, peerCount);
-
-                int sentCount = 0;
-                for (int i = startPeer; i < endPeer; i++)
+                if (peers[i].m_peer?.m_socket?.IsConnected() == true)
                 {
                     zdoManager.SendZDOs(peers[i], flush: false);
                     sentCount++;
                 }
-
-                zdoManager.m_nextSendPeer = (endPeer < peerCount) ? endPeer : 0;
-
-                if (VBNetTweaks.DebugEnabled.Value)
-                {
-                    VBNetTweaks.LogVerbose($"Sent ZDOs to {sentCount}/{peerCount} peers (interval: {sendInterval:F3}s, next: {zdoManager.m_nextSendPeer})");
-                }
-                
             }
-            else if (VBNetTweaks.DebugEnabled.Value && peerCount > 0)
+
+            zdoManager.m_nextSendPeer = (endPeer < peerCount) ? endPeer : 0;
+
+            if (VBNetTweaks.DebugEnabled.Value)
             {
-                VBNetTweaks.LogVerbose($"Send timer: {zdoManager.m_sendTimer:F3}/{sendInterval:F3}s, peers: {peerCount}, next: {zdoManager.m_nextSendPeer}");
+                VBNetTweaks.LogVerbose($"Sent ZDOs to {sentCount}/{peerCount} peers " + $"(adaptive: {sendInterval:F3}s, {peersPerUpdate} peers/update)");
             }
         }
-        catch (Exception e)
+        else if (VBNetTweaks.DebugEnabled.Value && peerCount > 0)
         {
-            VBNetTweaks.LogDebug($"ERROR in OptimizedSendZDOToPeers: {e.Message}");
-            // На всякий случай вызываем оригинальный метод
-            zdoManager.SendZDOToPeers2(dt);
+            VBNetTweaks.LogVerbose($"Send timer: {zdoManager.m_sendTimer:F3}/{sendInterval:F3}s, " + $"peers: {peerCount}, next: {zdoManager.m_nextSendPeer}");
         }
     }
+    catch (Exception e)
+    {
+        VBNetTweaks.LogDebug($"ERROR in OptimizedSendZDOToPeers: {e.Message}");
+        zdoManager.SendZDOToPeers2(dt);
+    }
+}
 
     // Патч для буферизации ZDO данных (из NetworkTweaks) - ТОЛЬКО ДЛЯ СЕРВЕРА
     private static readonly List<ZPackage> _zdoBuffer = new List<ZPackage>();
@@ -139,8 +141,6 @@ public static class UnifiedZDOTranspiler
     private static void ZNet_OnNewConnection_Postfix(ZNet __instance, ZNetPeer peer)
     {
         if (!Helper.IsServer()) return;
-        
-        if (!ShouldApplyOldOptimizations()) return;
         
         if (!__instance || !__instance.IsServer())
         {

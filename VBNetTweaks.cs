@@ -1,4 +1,5 @@
 ﻿using Jotunn.Extensions;
+using VBNetTweaks.Utils;
 
 namespace VBNetTweaks
 {
@@ -6,7 +7,7 @@ namespace VBNetTweaks
     public class VBNetTweaks : BaseUnityPlugin
     {
         private const string ModName = "VBNetTweaks";
-        private const string ModVersion = "0.0.7";
+        private const string ModVersion = "0.0.8";
         private const string ModGUID = "VitByr.VBNetTweaks";
 
         public static ConfigEntry<bool> DebugEnabled;
@@ -29,10 +30,10 @@ namespace VBNetTweaks
             VerboseLogging = Config.Bind("01 - General", "VerboseLogging", false, new ConfigDescription("Включить подробное логирование успешных операций"));
 
             _harmony = Harmony.CreateAndPatchAll(Assembly.GetExecutingAssembly(), ModGUID);
-            
+
             // Отложенная инициализация серверных настроек
             StartCoroutine(DelayedServerConfigInit());
-            
+
             Logger.LogInfo("VBNetTweaks загружен!");
             if (DebugEnabled.Value) Logger.LogInfo("Режим отладки включен");
         }
@@ -55,7 +56,7 @@ namespace VBNetTweaks
                 PeersPerUpdate = Config.BindConfig("02 - Network", "PeersPerUpdate", 20, "Количество пиров для обработки за один апдейт - ТОЛЬКО СЕРВЕР", synced: true);
                 SceneDebugEnabled = Config.BindConfig("03 - Scene Optimizations", "SceneDebugEnabled", false, "Включить отладочный вывод для сцены", synced: true);
 
-                
+
                 _serverConfigsInitialized = true;
                 Logger.LogInfo("Серверные настройки VBNetTweaks инициализированы");
             }
@@ -78,35 +79,20 @@ namespace VBNetTweaks
             if (DebugEnabled.Value && VerboseLogging.Value) Debug.Log($"[VBNetTweaks] {message}");
         }
 
-        public static bool GetSceneDebugEnabled() 
+        public static bool GetSceneDebugEnabled()
         {
-            try 
+            try
             {
-                return SceneDebugEnabled?.Value ?? false; 
+                return SceneDebugEnabled?.Value ?? false;
             }
-            catch 
+            catch
             {
-                return false; 
+                return false;
             }
         }
-        
-        // Методы для безопасного доступа к серверным настройкам
-        public static float GetSendInterval() => _serverConfigsInitialized ? SendInterval?.Value ?? 0.05f : 0.05f;
-        public static int GetPeersPerUpdate() 
-        {
-            if (!_serverConfigsInitialized) return 5; // По умолчанию консервативно
-    
-            int playerCount = ZNet.instance.GetPeerConnections();
-    
-            // Адаптивная логика в зависимости от онлайна
-            return playerCount switch
-            {
-                < 10 => 8,    // Мало игроков - можно больше
-                < 20 => 6,    // Средний онлайн
-                < 30 => 4,    // Многолюдно
-                < 40 => 3,    // Очень многолюдно
-                _ => 2        // Максимальная нагрузка
-            };
-        }
+        public static float GetSendInterval() => _serverConfigsInitialized ? AdaptiveOptimizationManager.GetSendInterval() : 0.05f;
+        public static int GetPeersPerUpdate() => AdaptiveOptimizationManager.GetPeersPerUpdate();
     }
+    
+    
 }

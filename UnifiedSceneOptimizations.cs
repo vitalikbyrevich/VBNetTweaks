@@ -1,15 +1,10 @@
-﻿namespace VBNetTweaks;
+﻿using VBNetTweaks.Utils;
 
-using System;
-using System.Collections.Generic;
-using UnityEngine;
-using HarmonyLib;
+namespace VBNetTweaks;
 
 [HarmonyPatch]
 public static class UnifiedSceneOptimizations
 {
-    // Конфигурационные параметры
-
     // Переменные для Scenic
     private static readonly List<ZDO> _zdosToRemove = new List<ZDO>(64);
     private static byte _currentFrameMark;
@@ -24,7 +19,6 @@ public static class UnifiedSceneOptimizations
     {
         // Используем безопасный геттер вместо прямого доступа
         if (Helper.IsServer()) return;
-       // if (!VBNetTweaks.GetEnableDoorOwnership()) return;
 
         try
         {
