@@ -10,12 +10,12 @@ public static class OptimizedNetSync
     private static readonly Dictionary<string, HashSet<long>> m_dataSubscribers = new Dictionary<string, HashSet<long>>();
     private static readonly Dictionary<string, float> m_lastBroadcastTime = new Dictionary<string, float>();
     private static readonly Dictionary<string, ZPackage> m_pendingUpdates = new Dictionary<string, ZPackage>();
-    
+
     // Настройки оптимизации
     private const float BROADCAST_INTERVAL = 0.3f; // 300ms между рассылками
     private const float CLEANUP_INTERVAL = 30f; // Очистка каждые 30 секунд
     private static float m_lastCleanupTime;
-    private const int MAX_DATA_SIZE = 1024 * 1024; // 1MB максимум на данные
+    private const int MAX_DATA_SIZE = 4096 * 4096; // 1MB максимум на данные
 
     // ==================== КЛИЕНТСКАЯ ЧАСТЬ ====================
     private static readonly Dictionary<string, ZPackage> m_localData = new Dictionary<string, ZPackage>();
@@ -23,6 +23,8 @@ public static class OptimizedNetSync
     private static readonly Dictionary<string, Action<ZPackage>> m_dataCallbacks = new Dictionary<string, Action<ZPackage>>();
     private static readonly Dictionary<string, float> m_lastRequestTime = new Dictionary<string, float>();
     private const float REQUEST_INTERVAL = 2f; // 2 секунды между повторными запросами
+
+
 
     [HarmonyPostfix]
     [HarmonyPatch(typeof(ZNet), nameof(ZNet.Awake))]
@@ -79,7 +81,7 @@ public static class OptimizedNetSync
         {
             string dataID = batchPkg.ReadString();
             ZPackage data = batchPkg.ReadPackage();
-            
+
             if (data.Size() <= MAX_DATA_SIZE)
             {
                 m_serverData[dataID] = data;
@@ -88,14 +90,38 @@ public static class OptimizedNetSync
         }
     }
 
+    // ==================== УПРОЩЕННАЯ СИСТЕМА БАТЧИНГА ====================
+
     private static void ScheduleBroadcast(string dataID, ZPackage data)
     {
         m_pendingUpdates[dataID] = data;
 
-        // ИСПОЛЬЗОВАТЬ адаптивный интервал
-        float broadcastInterval = AdaptiveOptimizationManager.GetBroadcastInterval();
-    
-        if (!m_lastBroadcastTime.TryGetValue(dataID, out float lastTime) || Time.time - lastTime >= broadcastInterval) ProcessPendingBroadcasts();
+        // РАЗНЫЕ ИНТЕРВАЛЫ ДЛЯ РАЗНЫХ ТИПОВ ДАННЫХ
+        float broadcastInterval = GetBroadcastIntervalForData(dataID);
+
+        // КРИТИЧНЫЕ ДАННЫЕ - отправляем немедленно
+        bool isCritical = dataID.StartsWith("player_") ||
+                          dataID.StartsWith("door_") ||
+                          dataID.StartsWith("chest_");
+
+        if (isCritical || !m_lastBroadcastTime.TryGetValue(dataID, out float lastTime) ||
+            Time.time - lastTime >= broadcastInterval)
+        {
+            ProcessPendingBroadcasts();
+        }
+    }
+
+    private static float GetBroadcastIntervalForData(string dataID)
+    {
+        // РАЗНЫЕ ИНТЕРВАЛЫ ДЛЯ РАЗНЫХ ТИПОВ ДАННЫХ
+        if (dataID.StartsWith("player_") || dataID.StartsWith("door_"))
+            return 0.05f; // 50ms - игроки и двери
+        else if (dataID.StartsWith("chest_") || dataID.StartsWith("inventory_"))
+            return 0.1f; // 100ms - инвентари
+        else if (dataID.StartsWith("build_"))
+            return 0.2f; // 200ms - постройки
+        else
+            return 0.3f; // 300ms - все остальное
     }
 
     private static void ProcessPendingBroadcasts()
@@ -103,16 +129,52 @@ public static class OptimizedNetSync
         if (m_pendingUpdates.Count == 0) return;
 
         var currentTime = Time.time;
-        
-        // Группируем обновления по подписчикам для минимизации трафика
-        var subscriberUpdates = new Dictionary<long, ZPackage>();
-        
+
+        // РАЗДЕЛЯЕМ ДАННЫЕ ПО ПРИОРИТЕТАМ
+        var criticalUpdates = new Dictionary<string, ZPackage>();
+        var normalUpdates = new Dictionary<string, ZPackage>();
+
         foreach (var update in m_pendingUpdates)
         {
             string dataID = update.Key;
             ZPackage data = update.Value;
 
+            // ОПРЕДЕЛЯЕМ ПРИОРИТЕТ
+            if (dataID.StartsWith("player_") || dataID.StartsWith("door_") || dataID.StartsWith("chest_"))
+            {
+                criticalUpdates[dataID] = data;
+            }
+            else
+            {
+                normalUpdates[dataID] = data;
+            }
+
             m_lastBroadcastTime[dataID] = currentTime;
+        }
+
+        // СНАЧАЛА ОТПРАВЛЯЕМ КРИТИЧНЫЕ ДАННЫЕ
+        if (criticalUpdates.Count > 0)
+        {
+            SendBatchUpdates(criticalUpdates, "critical");
+        }
+
+        // ПОТОМ ОСТАЛЬНЫЕ
+        if (normalUpdates.Count > 0)
+        {
+            SendBatchUpdates(normalUpdates, "normal");
+        }
+
+        m_pendingUpdates.Clear();
+    }
+
+    private static void SendBatchUpdates(Dictionary<string, ZPackage> updates, string batchType)
+    {
+        var subscriberUpdates = new Dictionary<long, ZPackage>();
+
+        foreach (var update in updates)
+        {
+            string dataID = update.Key;
+            ZPackage data = update.Value;
 
             if (m_dataSubscribers.TryGetValue(dataID, out var subscribers))
             {
@@ -132,7 +194,7 @@ public static class OptimizedNetSync
                     batchPkg.SetPos(0);
                     batchPkg.Write(count + 1);
                     batchPkg.SetPos(currentPos);
-                    
+
                     batchPkg.Write(dataID);
                     batchPkg.Write(data);
                 }
@@ -140,11 +202,13 @@ public static class OptimizedNetSync
         }
 
         // Отправляем батчи
-        foreach (var subscriber in subscriberUpdates) ZRoutedRpc.instance.InvokeRoutedRPC(subscriber.Key, "NetSync_BatchData", subscriber.Value);
+        foreach (var subscriber in subscriberUpdates)
+        {
+            ZRoutedRpc.instance.InvokeRoutedRPC(subscriber.Key, "NetSync_BatchData", subscriber.Value);
+        }
 
-        m_pendingUpdates.Clear();
-
-        if (VBNetTweaks.DebugEnabled.Value) VBNetTweaks.LogVerbose($"Batch broadcast to {subscriberUpdates.Count} subscribers, {m_pendingUpdates.Count} updates");
+        if (VBNetTweaks.DebugEnabled.Value)
+            VBNetTweaks.LogVerbose($"Sent {batchType} batch: {updates.Count} updates to {subscriberUpdates.Count} subscribers");
     }
 
     public static void RPC_NetSyncSubscribe(long sender, string dataID)
@@ -236,7 +300,7 @@ public static class OptimizedNetSync
         // Батчим несколько обновлений в один пакет
         var batchPkg = new ZPackage();
         batchPkg.Write(dataUpdates.Count);
-        
+
         foreach (var update in dataUpdates)
         {
             if (update.Value.Size() <= MAX_DATA_SIZE)
@@ -281,20 +345,34 @@ public static class OptimizedNetSync
     {
         if (!__instance.IsServer()) return;
 
-        // ВЫЗЫВАТЬ обновление адаптивных настроек каждый кадр
+        // Обновляем мониторинг
         AdaptiveOptimizationManager.UpdateAdaptiveSettings();
 
-        // Периодическая очистка с динамическим интервалом
-        float cleanupInterval = AdaptiveOptimizationManager.GetBroadcastInterval() * 100f;
-        if (Time.time - m_lastCleanupTime > cleanupInterval)
+        // Периодическая очистка с фиксированным интервалом
+        if (Time.time - m_lastCleanupTime > 60f) // Раз в минуту
         {
             CleanupOldData();
             m_lastCleanupTime = Time.time;
         }
 
-        // Принудительная рассылка с адаптивной частотой
-        float broadcastFreq = 60f / AdaptiveOptimizationManager.GetBroadcastInterval();
-        if (m_pendingUpdates.Count > 0 && Time.frameCount % (int)broadcastFreq == 0) ProcessPendingBroadcasts();
+        // ПРИНУДИТЕЛЬНАЯ РАССЫЛКА КРИТИЧНЫХ ДАННЫХ КАЖДЫЕ 100ms
+        if (m_pendingUpdates.Count > 0 && Time.frameCount % 6 == 0) // ~100ms при 60 FPS
+        {
+            // Проверяем есть ли критические данные
+            bool hasCriticalData = m_pendingUpdates.Keys
+                .Any(key => key.StartsWith("player_") || key.StartsWith("door_"));
+
+            if (hasCriticalData)
+            {
+                ProcessPendingBroadcasts();
+            }
+        }
+
+        // ПРИНУДИТЕЛЬНАЯ РАССЫЛКА ВСЕХ ДАННЫХ КАЖДЫЕ 500ms  
+        if (m_pendingUpdates.Count > 0 && Time.frameCount % 30 == 0) // ~500ms при 60 FPS
+        {
+            ProcessPendingBroadcasts();
+        }
     }
 
     private static void CleanupOldData()

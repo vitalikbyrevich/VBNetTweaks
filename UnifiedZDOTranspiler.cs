@@ -5,57 +5,15 @@ namespace VBNetTweaks;
 [HarmonyPatch]
 public static class UnifiedZDOTranspiler
 {
-    // Инструменты отладки (из ZRpcPatch)
-    public static CodeMatcher GetPosition(this CodeMatcher codeMatcher, out int position)
-    {
-        position = codeMatcher.Pos;
-        return codeMatcher;
-    }
+    private static readonly List<ZPackage> _zdoBuffer = new List<ZPackage>();
 
-    public static CodeMatcher AddLabel(this CodeMatcher codeMatcher, out Label label)
-    {
-        label = new Label();
-        codeMatcher.AddLabels(new[] { label });
-        return codeMatcher;
-    }
-
-    public static CodeMatcher Print(this CodeMatcher codeMatcher, int before, int after, string context = "")
-    {
-        if (!VBNetTweaks.DebugEnabled.Value) return codeMatcher;
-
-        VBNetTweaks.LogVerbose($"=== IL Code Dump [{context}] ===");
-        for (int i = -before; i <= after; ++i)
-        {
-            int index = codeMatcher.Pos + i;
-            if (index <= 0 || index >= codeMatcher.Length) continue;
-
-            try
-            {
-                var instruction = codeMatcher.InstructionAt(i);
-                VBNetTweaks.LogDebug($"[{i:+#;-#;0}] {instruction}");
-            }
-            catch (Exception e)
-            {
-                VBNetTweaks.LogDebug($"Ошибка чтения инструкции [{i}]: {e.Message}");
-            }
-        }
-        VBNetTweaks.LogVerbose("=== End IL Dump ===");
-        return codeMatcher;
-    }
-
-    public static bool IsVirtCall(this CodeInstruction i, string declaringType, string name) 
-        => i.opcode == OpCodes.Callvirt && i.operand is MethodInfo methodInfo && methodInfo.DeclaringType?.Name == declaringType && methodInfo.Name == name;
-
-    // Главный транспайлер для ZDOMan.Update - ТОЛЬКО ДЛЯ СЕРВЕРА
     [HarmonyTranspiler]
-    [HarmonyPatch(typeof(ZDOMan), "Update")]
-    static IEnumerable<CodeInstruction> ZDOManUpdateTranspiler(IEnumerable<CodeInstruction> instructions)
+    [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.Update))]
+    private static IEnumerable<CodeInstruction> ZDOManUpdateTranspiler(IEnumerable<CodeInstruction> instructions)
     {
-        var matcher = new CodeMatcher(instructions).Start().Print(3, 3, "ZDOMan.Update - Start");
-
-        // Ищем вызов SendZDOToPeers2
+        var matcher = new CodeMatcher(instructions).Start();
         matcher.MatchStartForward(new CodeMatch(OpCodes.Call, AccessTools.Method(typeof(ZDOMan), "SendZDOToPeers2")));
-
+        
         if (matcher.IsInvalid)
         {
             VBNetTweaks.LogDebug("WARNING: SendZDOToPeers2 не найден, патч не применен");
@@ -63,116 +21,69 @@ public static class UnifiedZDOTranspiler
         }
 
         VBNetTweaks.LogDebug("Найден SendZDOToPeers2, заменяем на OptimizedSendZDOToPeers");
-
-        matcher
-            .Print(2, 2, "Before SendZDOToPeers2 replacement")
-            .SetOperandAndAdvance(AccessTools.Method(typeof(UnifiedZDOTranspiler), "OptimizedSendZDOToPeers"))
-            .Print(2, 2, "After SendZDOToPeers2 replacement");
-
+        matcher.SetOperandAndAdvance(AccessTools.Method(typeof(UnifiedZDOTranspiler), "OptimizedSendZDOToPeers"));
+        
         return matcher.InstructionEnumeration();
     }
 
-    // Оптимизированная версия SendZDOToPeers - ТОЛЬКО ДЛЯ СЕРВЕРА
     public static void OptimizedSendZDOToPeers(ZDOMan zdoManager, float dt)
-{
-    try
     {
-        int peerCount = zdoManager.m_peers.Count;
-        if (peerCount <= 0)
+        try
         {
-            VBNetTweaks.LogVerbose($"No peers to send, count: {peerCount}");
-            return;
-        }
+            int peerCount = zdoManager.m_peers.Count;
+            if (peerCount <= 0) return;
 
-        zdoManager.m_sendTimer += dt;
-
-        // ИСПОЛЬЗОВАТЬ адаптивный интервал
-        float sendInterval = AdaptiveOptimizationManager.GetSendInterval();
-        
-        if (zdoManager.m_sendTimer >= sendInterval)
-        {
-            zdoManager.m_sendTimer = 0f;
-            List<ZDOMan.ZDOPeer> peers = zdoManager.m_peers;
-
-            int startPeer = Math.Max(zdoManager.m_nextSendPeer, 0);
+            zdoManager.m_sendTimer += dt;
+            float sendInterval = VBNetTweaks.GetSendInterval();
             
-            // ИСПОЛЬЗОВАТЬ адаптивное количество пиров
-            int peersPerUpdate = AdaptiveOptimizationManager.GetPeersPerUpdate();
-            
-            // Дополнительная оптимизация для высоких нагрузок
-            if (peerCount > 50) peersPerUpdate = Math.Min(peersPerUpdate, Math.Max(1, peerCount / 25));
-            
-            int endPeer = Math.Min(startPeer + peersPerUpdate, peerCount);
-
-            int sentCount = 0;
-            for (int i = 0; i < peers.Count; i++)
+            if (zdoManager.m_sendTimer >= sendInterval)
             {
-                if (peers[i].m_peer?.m_socket?.IsConnected() == true)
+                zdoManager.m_sendTimer = 0f;
+                
+                int startPeer = Math.Max(zdoManager.m_nextSendPeer, 0);
+                int peersPerUpdate = VBNetTweaks.GetPeersPerUpdate();
+                int processed = 0;
+
+                for (int i = 0; i < Math.Min(peersPerUpdate, peerCount); i++)
                 {
-                    zdoManager.SendZDOs(peers[i], flush: false);
-                    sentCount++;
+                    int peerIndex = (startPeer + i) % peerCount;
+                    var peer = zdoManager.m_peers[peerIndex];
+
+                    if (peer?.m_peer?.m_socket?.IsConnected() == true)
+                    {
+                        // ПРОСТАЯ ОТПРАВКА БЕЗ ПРИОРИТЕТОВ
+                        // ForceSend ZDO автоматически обрабатываются в SendZDOs
+                        zdoManager.SendZDOs(peer, flush: false);
+                        processed++;
+                    }
+                }
+
+                zdoManager.m_nextSendPeer = (startPeer + processed) % peerCount;
+
+                if (VBNetTweaks.DebugEnabled.Value)
+                {
+                    VBNetTweaks.LogVerbose($"Sent ZDOs to {processed}/{peerCount} peers " +
+                                           $"(interval: {sendInterval:F3}s, next: {zdoManager.m_nextSendPeer})");
                 }
             }
-
-            zdoManager.m_nextSendPeer = (endPeer < peerCount) ? endPeer : 0;
-
-            if (VBNetTweaks.DebugEnabled.Value)
-            {
-                VBNetTweaks.LogVerbose($"Sent ZDOs to {sentCount}/{peerCount} peers " + $"(adaptive: {sendInterval:F3}s, {peersPerUpdate} peers/update)");
-            }
         }
-        else if (VBNetTweaks.DebugEnabled.Value && peerCount > 0)
+        catch (Exception ex)
         {
-            VBNetTweaks.LogVerbose($"Send timer: {zdoManager.m_sendTimer:F3}/{sendInterval:F3}s, " + $"peers: {peerCount}, next: {zdoManager.m_nextSendPeer}");
+            VBNetTweaks.LogDebug($"ERROR in OptimizedSendZDOToPeers: {ex.Message}");
+            // Fallback to original method
+            zdoManager.SendZDOToPeers2(dt);
         }
     }
-    catch (Exception e)
-    {
-        VBNetTweaks.LogDebug($"ERROR in OptimizedSendZDOToPeers: {e.Message}");
-        zdoManager.SendZDOToPeers2(dt);
-    }
-}
 
-    // Патч для буферизации ZDO данных (из NetworkTweaks) - ТОЛЬКО ДЛЯ СЕРВЕРА
-    private static readonly List<ZPackage> _zdoBuffer = new List<ZPackage>();
-
+    // Убрали всю сложную буферизацию - оставляем только базовую
     [HarmonyPostfix]
-    [HarmonyPatch(typeof(ZNet), "OnNewConnection")]
+    [HarmonyPatch(typeof(ZNet), nameof(ZNet.OnNewConnection))]
     private static void ZNet_OnNewConnection_Postfix(ZNet __instance, ZNetPeer peer)
     {
         if (!Helper.IsServer()) return;
         
-        if (!__instance || !__instance.IsServer())
-        {
-            peer.m_rpc.Register("ZDOData", (ZRpc rpc, ZPackage pkg) =>
-            {
-                _zdoBuffer.Add(pkg);
-                VBNetTweaks.LogVerbose($"Buffered ZDOData package, buffer size: {_zdoBuffer.Count}");
-            });
-        }
-    }
-
-    [HarmonyPostfix]
-    [HarmonyPatch(typeof(ZNet), "Shutdown")]
-    private static void ZNet_Shutdown_Postfix()
-    {
-        if (!Helper.IsServer()) return;
-        
-        _zdoBuffer.Clear();
-        VBNetTweaks.LogVerbose("Cleared ZDO buffer on shutdown");
-    }
-
-    [HarmonyPostfix]
-    [HarmonyPatch(typeof(ZDOMan), "AddPeer")]
-    private static void ZDOMan_AddPeer_Postfix(ZDOMan __instance, ZNetPeer netPeer)
-    {
-        if (!Helper.IsServer()) return;
-        
-        if (_zdoBuffer.Count > 0)
-        {
-            VBNetTweaks.LogVerbose($"Processing {_zdoBuffer.Count} buffered ZDO packages for new peer");
-            foreach (var package in _zdoBuffer) __instance.RPC_ZDOData(netPeer.m_rpc, package);
-            _zdoBuffer.Clear();
-        }
+        // Минимальная буферизация для новых клиентов
+        // Вся основная логика остается в ванильной игре
+        VBNetTweaks.LogVerbose($"New client connected: {peer.m_playerName}");
     }
 }

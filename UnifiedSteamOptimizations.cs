@@ -17,7 +17,13 @@ public static class UnifiedSteamOptimizations
 
         // Используем безопасный метод доступа к настройкам
         int newTransferRate = 50000000;
-        matcher.SetInstructionAndAdvance(new CodeInstruction(OpCodes.Ldc_I4, newTransferRate)).Print(1, 1, "Steam transfer rate patched");
+        matcher.SetInstructionAndAdvance(new CodeInstruction(OpCodes.Ldc_I4, newTransferRate));
+        
+        // Простое логирование вместо Print
+        if (VBNetTweaks.DebugEnabled.Value)
+        {
+            VBNetTweaks.LogVerbose("Steam transfer rate patched in transpiler");
+        }
 
         VBNetTweaks.LogVerbose($"Steam transfer rate patched: 153600 -> {newTransferRate}");
 
@@ -60,9 +66,15 @@ public static class UnifiedSteamOptimizations
                     handle.Free();
                     VBNetTweaks.LogVerbose($"Steam send buffer size set to: {bufferSize}");
                 }
-                else VBNetTweaks.LogDebug("SetConfigValue method not found");
+                else 
+                {
+                    VBNetTweaks.LogDebug("SetConfigValue method not found");
+                }
             }
-            else VBNetTweaks.LogDebug("SteamNetworkingUtils type not found");
+            else 
+            {
+                VBNetTweaks.LogDebug("SteamNetworkingUtils type not found");
+            }
         }
         catch (Exception e)
         {

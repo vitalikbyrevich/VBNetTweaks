@@ -7,7 +7,7 @@ namespace VBNetTweaks
     public class VBNetTweaks : BaseUnityPlugin
     {
         private const string ModName = "VBNetTweaks";
-        private const string ModVersion = "0.0.8";
+        private const string ModVersion = "0.1.0";
         private const string ModGUID = "VitByr.VBNetTweaks";
 
         public static ConfigEntry<bool> DebugEnabled;
@@ -90,9 +90,14 @@ namespace VBNetTweaks
                 return false;
             }
         }
-        public static float GetSendInterval() => _serverConfigsInitialized ? AdaptiveOptimizationManager.GetSendInterval() : 0.05f;
-        public static int GetPeersPerUpdate() => AdaptiveOptimizationManager.GetPeersPerUpdate();
+        public static float GetSendInterval()
+        {
+            return (!_serverConfigsInitialized) ? 0.05f : (SendInterval?.Value ?? 0.05f);
+        }
+
+        public static int GetPeersPerUpdate()
+        {
+            return (!_serverConfigsInitialized) ? 20 : (PeersPerUpdate?.Value ?? 20);
+        }
     }
-    
-    
 }

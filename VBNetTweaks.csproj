@@ -35,20 +35,22 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Utils\AdaptiveOptimizationManager.cs" />
+    <None Include="0\AdaptiveOptimizationManager.cs" />
+    <None Include="0\OptimizedNetSync.cs" />
+    <None Include="0\PerfomanceMonitor.cs" />
+    <None Include="0\ZDOManMonitoring.cs" />
+    <None Include="0\ZRoutedRpcOptimizations.cs" />
+    <None Include="0\FixedNetworkOptimizations.cs" />
     <Compile Include="Utils\GlobalUsings.cs" />
     <Compile Include="Utils\Helper.cs" />
-    <Compile Include="ZRoutedRpcOptimizations.cs" />
     <None Include="0\InventoryOptimization.cs" />
     <None Include="0\NetSyncClient.cs" />
     <None Include="0\NetSyncServer.cs" />
-    <Compile Include="OptimizedNetSync.cs" />
     <Compile Include="UnifiedSceneOptimizations.cs" />
     <Compile Include="UnifiedSteamOptimizations.cs" />
     <Compile Include="UnifiedZDOTranspiler.cs" />
     <Compile Include="VBNetTweaks.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <None Include="Utils\PerfomanceMonitor.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="0Harmony">
