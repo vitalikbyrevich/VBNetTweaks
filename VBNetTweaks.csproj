@@ -41,6 +41,9 @@
     <None Include="0\ZDOManMonitoring.cs" />
     <None Include="0\ZRoutedRpcOptimizations.cs" />
     <None Include="0\FixedNetworkOptimizations.cs" />
+    <Compile Include="AILODPatches.cs" />
+    <Compile Include="MonsterAiPatches.cs" />
+    <Compile Include="PlayerPositionSyncPatches.cs" />
     <Compile Include="Utils\GlobalUsings.cs" />
     <Compile Include="Utils\Helper.cs" />
     <None Include="0\InventoryOptimization.cs" />
@@ -57,16 +60,16 @@
       <HintPath>..\..\..\0lib\0Harmony.dll</HintPath>
     </Reference>
     <Reference Include="assembly_guiutils">
-      <HintPath>..\..\..\0lib\assembly_guiutils_publicized.dll</HintPath>
+      <HintPath>..\..\..\..\0lib\assembly_guiutils_publicized.dll</HintPath>
     </Reference>
     <Reference Include="assembly_lux">
-      <HintPath>..\..\..\0lib\assembly_lux_publicized.dll</HintPath>
+      <HintPath>..\..\..\..\0lib\assembly_lux_publicized.dll</HintPath>
     </Reference>
     <Reference Include="assembly_utils">
-      <HintPath>..\..\..\0lib\assembly_utils_publicized.dll</HintPath>
+      <HintPath>..\..\..\..\0lib\assembly_utils_publicized.dll</HintPath>
     </Reference>
     <Reference Include="assembly_valheim">
-      <HintPath>..\..\..\0lib\assembly_valheim_publicized.dll</HintPath>
+      <HintPath>..\..\..\..\0lib\assembly_valheim_publicized.dll</HintPath>
     </Reference>
     <Reference Include="BepInEx">
       <HintPath>..\..\..\0lib\BepInEx.dll</HintPath>

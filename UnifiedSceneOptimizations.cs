@@ -96,10 +96,7 @@ public static class UnifiedSceneOptimizations
         }
     }
 
-    private static void RemoveUnmarkedObjects(
-        Dictionary<ZDO, ZNetView> netSceneInstances,
-        List<ZNetView> netSceneTempRemoved,
-        ZDOMan zdoManager)
+    private static void RemoveUnmarkedObjects(Dictionary<ZDO, ZNetView> netSceneInstances, List<ZNetView> netSceneTempRemoved, ZDOMan zdoManager)
     {
         // Используем Keys collection для избежания аллокаций
         var keys = netSceneInstances.Keys;

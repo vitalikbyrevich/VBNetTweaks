@@ -26,6 +26,54 @@ public static class UnifiedZDOTranspiler
         return matcher.InstructionEnumeration();
     }
 
+    private static void TryApplyZDOThrottle(ZDOMan zdoManager, ZDOMan.ZDOPeer peer)
+    {
+        try
+        {
+            // Получаем ближайшие ZDO для сектора пира (vanilla пути)
+            Vector3 refPos = peer.m_peer.GetRefPos();
+            Vector2i zone = ZoneSystem.GetZone(refPos);
+
+            // Списки временных объектов (используем поля ZDOMan)
+            var near = new List<ZDO>();
+            var distant = new List<ZDO>();
+
+            // vanilla active/distant: берём из ZoneSystem
+            int activeArea = ZoneSystem.instance?.m_activeArea ?? 3;
+            int distantArea = ZoneSystem.instance?.m_activeDistantArea ?? 5;
+
+            zdoManager.FindSectorObjects(zone, activeArea, distantArea, near, distant);
+
+            float throttleDist = VBNetTweaks.ZDOThrottleDistance.Value;
+
+            // Помечаем tempSortValue — это влияет на приоритет отправки
+            for (int i = 0; i < near.Count; i++)
+            {
+                var z = near[i];
+                float d = Vector3.Distance(z.GetPosition(), refPos);
+                // ближние — повышаем приоритет
+                z.m_tempSortValue = d - 150f;
+            }
+            for (int i = 0; i < distant.Count; i++)
+            {
+                var z = distant[i];
+                float d = Vector3.Distance(z.GetPosition(), refPos);
+                // дальние — понижаем приоритет и чуть реже шлём
+                z.m_tempSortValue = d + 150f;
+                if (d > throttleDist * 2f)
+                {
+                    // агрессивное: помечаем как низкоприоритетный — SendZDOs сам отсортирует
+                    z.m_tempSortValue += 300f;
+                }
+            }
+        }
+        catch (System.Exception e)
+        {
+            VBNetTweaks.LogDebug($"ZDO throttle error: {e.Message}");
+        }
+    }
+
+    
     public static void OptimizedSendZDOToPeers(ZDOMan zdoManager, float dt)
     {
         try
@@ -51,6 +99,7 @@ public static class UnifiedZDOTranspiler
 
                     if (peer?.m_peer?.m_socket?.IsConnected() == true)
                     {
+                        if (Helper.IsServer() && VBNetTweaks.EnableZDOThrottling?.Value == true && VBNetTweaks.ZDOThrottleDistance.Value > 0f) { TryApplyZDOThrottle(zdoManager, peer); }
                         // ПРОСТАЯ ОТПРАВКА БЕЗ ПРИОРИТЕТОВ
                         // ForceSend ZDO автоматически обрабатываются в SendZDOs
                         zdoManager.SendZDOs(peer, flush: false);
@@ -62,8 +111,7 @@ public static class UnifiedZDOTranspiler
 
                 if (VBNetTweaks.DebugEnabled.Value)
                 {
-                    VBNetTweaks.LogVerbose($"Sent ZDOs to {processed}/{peerCount} peers " +
-                                           $"(interval: {sendInterval:F3}s, next: {zdoManager.m_nextSendPeer})");
+                    VBNetTweaks.LogVerbose($"Sent ZDOs to {processed}/{peerCount} peers " + $"(interval: {sendInterval:F3}s, next: {zdoManager.m_nextSendPeer})");
                 }
             }
         }
