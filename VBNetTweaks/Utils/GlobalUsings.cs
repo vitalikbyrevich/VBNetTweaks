@@ -1,0 +1,17 @@
+﻿global using System.Reflection;
+global using BepInEx;
+global using BepInEx.Configuration;
+global using HarmonyLib;
+global using UnityEngine;
+global using System.Runtime.InteropServices;
+global using System;
+global using System.Collections.Generic;
+global using System.Reflection.Emit;
+global using Steamworks;
+global using Jotunn.Extensions;
+global using System.IO;
+global using System.IO.Compression;
+global using CompressionLevel = UnityEngine.CompressionLevel;
+global using VBNetTweaks.Utils;
+global using System.Diagnostics;
+global using Debug = UnityEngine.Debug;
