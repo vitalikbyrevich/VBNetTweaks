@@ -79,7 +79,7 @@
 
             long owner = __instance.GetPlayerID();
             if (!_playerData.TryGetValue(owner, out var d) || !d.ok) return;
-
+            
             bool isAttached = PlayerCache.IsPlayerAttached(owner);
             bool isOnShip = PlayerCache.IsPlayerOnShip(owner);
 

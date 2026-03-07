@@ -7,10 +7,16 @@
     }
     
     [BepInPlugin(ModGUID, ModName, ModVersion)]
+    [BepInIncompatibility("CacoFFF.valheim.LeanNet")]
+    [BepInIncompatibility("redseiko.valheim.scenic")]
+    [BepInIncompatibility("Searica.Valheim.NetworkTweaks")]
+    [BepInIncompatibility("Searica.Valheim.OpenSesame")]
+    [BepInIncompatibility("org.bepinex.plugins.network")]
+    [BepInIncompatibility("CW_Jesse.BetterNetworking")]
     public class VBNetTweaks : BaseUnityPlugin
     {
         private const string ModName = "VBNetTweaks";
-        private const string ModVersion = "0.1.5";
+        private const string ModVersion = "0.1.7";
         private const string ModGUID = "VitByr.VBNetTweaks";
         
         
@@ -35,6 +41,7 @@
         
         public static ConfigEntry<bool> EnableNetworkCompression;
         public static ConfigEntry<string> CompressionAlgorithm;
+        public static ConfigEntry<int> m_CompressionLevel;
 
         public static ConfigEntry<bool> DebugEnabled;
         public static ConfigEntry<bool> VerboseLogging;
@@ -57,6 +64,7 @@
                 
             EnableNetworkCompression = Config.Bind("Network", "EnableCompression", true, "Enable network compression (safe, negotiated between peers)");
             CompressionAlgorithm = Config.Bind("Network", "CompressionAlgorithm", "Deflate", "Deflate (built-in) or Zstd (requires ZstdSharp)");
+            m_CompressionLevel = Config.Bind("Network", "CompressionLevel", 1, "The higher the load on the processor increases. Max 10");
 
             if (ZRoutedRpc.instance != null)
             {
@@ -76,7 +84,12 @@
             _harmony.PatchAll(typeof(PlayerSyncSystem));
             _harmony.PatchAll(typeof(ObjectPool));
             _harmony.PatchAll(typeof(PlayerCache));
-
+            _harmony.PatchAll(typeof(WearNTear_ClearCachedSupport_Patch));
+            _harmony.PatchAll(typeof(WearNTear_OnDestroy_Patch));
+            _harmony.PatchAll(typeof(WearNTear_UpdateWear_Patch));
+            _harmony.PatchAll(typeof(WearNTear_GetSupport_Patch));
+            _harmony.PatchAll(typeof(WearNTear_RPC_Damage_Patch));
+            _harmony.PatchAll(typeof(WearNTear_Destroy_Patch));
 
             // Серверные патчи — через корутину
             StartCoroutine(DelayedServerPatchInit());

@@ -6,11 +6,9 @@
         private static readonly Dictionary<ZDO, float> _distanceCache = new();
         private static Vector3 _cachedRefPos;
         private static int _cachedFrame = -1;
-        
-        private const int MaxZDOsPerTick = 350;
-        private const float MobNearDistance = 40f;
-        private const float MobMediumDistance = 100f;
+
         private const float ImportantObjectDistance = 200f;
+        private static readonly int COMPRESSION_VERSION = VBNetTweaks.m_CompressionLevel.Value;
 
         private static readonly int PlayerPrefab = "Player".GetStableHashCode();
         private static readonly HashSet<int> ShipPrefabs = new()
@@ -32,7 +30,6 @@
 
         private static readonly int HashAI = "ai".GetStableHashCode();
 
-        private const int COMPRESSION_VERSION = 1;
         private const string RPC_VERSION = "VBNT.CompressionVersion";
         private const string RPC_ENABLED = "VBNT.CompressionEnabled";
         private const string RPC_STARTED = "VBNT.CompressionStarted";
@@ -51,31 +48,30 @@
 
         public static void Initialize()
         {
-            if (VBNetTweaks.EnableNetworkCompression.Value)
+            if (!VBNetTweaks.EnableNetworkCompression.Value) return;
+
+            try
             {
+                string algo = VBNetTweaks.CompressionAlgorithm.Value;
+                if (algo.Equals("Zstd", StringComparison.OrdinalIgnoreCase))
+                {
+                    _compressor = new ZstdCompressor();
+                    VBNetTweaks.LogDebug("Using Zstd compressor");
+                }
+                else
+                {
+                    _compressor = new DeflateCompressor();
+                    VBNetTweaks.LogDebug("Using Deflate compressor");
+                }
+            }
+            catch (Exception e)
+            {
+                VBNetTweaks.LogDebug($"Compression init failed: {e.Message}, using Deflate fallback");
                 try
                 {
-                    string algo = VBNetTweaks.CompressionAlgorithm.Value;
-                    if (algo.Equals("Zstd", StringComparison.OrdinalIgnoreCase))
-                    {
-                        _compressor = new ZstdCompressor();
-                        VBNetTweaks.LogDebug("Using Zstd compressor");
-                    }
-                    else
-                    {
-                        _compressor = new DeflateCompressor();
-                        VBNetTweaks.LogDebug("Using Deflate compressor");
-                    }
+                    _compressor = new DeflateCompressor();
                 }
-                catch (Exception e)
-                {
-                    VBNetTweaks.LogDebug($"Compression init failed: {e.Message}, using Deflate fallback");
-                    try
-                    {
-                        _compressor = new DeflateCompressor();
-                    }
-                    catch { }
-                }
+                catch { }
             }
         }
 
@@ -88,7 +84,6 @@
 
                 zdoManager.m_sendTimer += dt;
                 float sendInterval = VBNetTweaks.GetEffectiveSendInterval();
-
                 if (zdoManager.m_sendTimer < sendInterval) return;
                 zdoManager.m_sendTimer = 0f;
 
@@ -100,13 +95,16 @@
                 {
                     int peerIndex = (startPeer + i) % peerCount;
                     var peer = zdoManager.m_peers[peerIndex];
-
                     if (peer?.m_peer?.m_socket?.IsConnected() != true) continue;
 
-                    if (Helper.IsServer() && VBNetTweaks.EnableZDOThrottling.Value)
-                        ApplyZDOThrottle(zdoManager, peer);
+                    if (Helper.IsServer() && VBNetTweaks.EnableZDOThrottling.Value) ApplyZDOThrottle(zdoManager, peer);
 
-                    PerformanceMonitor.Track("SendZDOs", () => zdoManager.SendZDOs(peer, flush: false));
+                    PerformanceMonitor.Track("SendZDOs", () =>
+                    {
+                        // Внутри SendZDOs ваниль уже делает мягкий лимит по размеру пакета,
+                        // поэтому мы не режем список объектов сами.
+                        zdoManager.SendZDOs(peer, flush: false);
+                    });
 
                     processed++;
                 }
@@ -119,6 +117,17 @@
                 zdoManager.SendZDOToPeers2(dt);
             }
         }
+        
+      /*  private static bool IsItemDrop(ZDO zdo)
+        {
+            int prefab = zdo.GetPrefab();
+            if (prefab == 0) return false;
+
+            GameObject go = ZNetScene.instance?.GetPrefab(prefab);
+            if (!go) return false;
+
+            return go.GetComponent<ItemDrop>() != null;
+        }*/
 
         private static void ApplyZDOThrottle(ZDOMan zdoManager, ZDOMan.ZDOPeer peer)
         {
@@ -130,8 +139,8 @@
                 Vector3 refPos = peer.m_peer.GetRefPos();
                 Vector2i zone = ZoneSystem.GetZone(refPos);
 
-                near = ObjectPool.RentList<ZDO>();
-                distant = ObjectPool.RentList<ZDO>();
+                near = Utils.ObjectPool.RentList<ZDO>();
+                distant = Utils.ObjectPool.RentList<ZDO>();
 
                 int activeArea = ZoneSystem.instance?.m_activeArea ?? 3;
                 int distantArea = ZoneSystem.instance?.m_activeDistantArea ?? 5;
@@ -140,28 +149,54 @@
 
                 float throttleDist = VBNetTweaks.ZDOThrottleDistance.Value;
 
+                // Мягкий троттлинг: слегка смещаем приоритет, но не убиваем объекты
                 foreach (var z in near)
                 {
+                    if (z == null) continue;
                     float d = Vector3.Distance(z.GetPosition(), refPos);
-                    z.m_tempSortValue = d - 150f;
+                    z.m_tempSortValue = d - 100f; // ближние всегда в приоритете
                 }
 
                 foreach (var z in distant)
                 {
+                    if (z == null) continue;
+
                     float d = Vector3.Distance(z.GetPosition(), refPos);
+
+                    // 🔥 Исключаем ItemDrop из троттлинга (важно для Jewelcrafting)
+                 /*   if (IsItemDrop(z))
+                    {
+                        z.m_tempSortValue = d - 50f;
+                        continue;
+                    }*/
+
+                    // Мобы — всегда обновляются нормально
+                    if (IsMob(z))
+                    {
+                        z.m_tempSortValue = d - 50f;
+                        continue;
+                    }
+
+                    // Остальные — обычный мягкий троттлинг
                     z.m_tempSortValue = d + 150f;
-                    if (d > throttleDist * 2f) z.m_tempSortValue += 300f;
                 }
             }
             finally
             {
-                if (near != null) ObjectPool.ReturnList(near);
-                if (distant != null) ObjectPool.ReturnList(distant);
+                if (near != null) Utils.ObjectPool.ReturnList(near);
+                if (distant != null) Utils.ObjectPool.ReturnList(distant);
             }
         }
 
         private static float GetDistance(ZDO zdo, Vector3 refPos)
         {
+            if (_cachedFrame != Time.frameCount || _cachedRefPos != refPos)
+            {
+                _distanceCache.Clear();
+                _cachedRefPos = refPos;
+                _cachedFrame = Time.frameCount;
+            }
+
             if (_distanceCache.TryGetValue(zdo, out float d)) return d;
 
             d = Vector3.Distance(zdo.GetPosition(), refPos);
@@ -273,12 +308,13 @@
             VBNetTweaks.LogDebug($"Receiving {(started ? "compressed" : "uncompressed")} from {GetPeerName(peer)}");
         }
 
-        public static bool ShouldCompressSend(ISocket socket) => _peerStatus.TryGetValue(socket, out var status) && status.SendingCompressed && _compressor != null;
+        public static bool ShouldCompressSend(ISocket socket) =>
+            _peerStatus.TryGetValue(socket, out var status) && status.SendingCompressed && _compressor != null;
 
-        public static bool ShouldCompressReceive(ISocket socket) => _peerStatus.TryGetValue(socket, out var status) && status.ReceivingCompressed && _compressor != null;
+        public static bool ShouldCompressReceive(ISocket socket) =>
+            _peerStatus.TryGetValue(socket, out var status) && status.ReceivingCompressed && _compressor != null;
 
         public static byte[] Compress(byte[] data) => _compressor?.Compress(data) ?? data;
-
         public static byte[] Decompress(byte[] data) => _compressor?.Decompress(data) ?? data;
 
         private static string GetPeerName(ZNetPeer peer)
@@ -317,6 +353,7 @@
             if (!Helper.IsServer()) return;
             if (!VBNetTweaks.EnablePlayerPositionBoost.Value) return;
 
+            // Кэш расстояний на кадр
             if (_cachedFrame != Time.frameCount || _cachedRefPos != refPos)
             {
                 _distanceCache.Clear();
@@ -330,12 +367,14 @@
 
                 int prefab = zdo.GetPrefab();
 
+                // Игроки — всегда топ-приоритет
                 if (prefab == PlayerPrefab)
                 {
                     zdo.m_tempSortValue -= 500f;
                     continue;
                 }
 
+                // Корабли — высоко, особенно с игроками
                 if (ShipPrefabs.Contains(prefab))
                 {
                     bool hasPlayers = ShipSyncSystem.ShipHasPlayers(zdo.m_uid);
@@ -345,33 +384,26 @@
 
                 float distance = GetDistance(zdo, refPos);
 
+                // Мобы — всегда должны получать обновления, без starvation
                 if (IsMob(zdo))
                 {
-                    if (distance < MobNearDistance) zdo.m_tempSortValue -= 300f;
-                    else if (distance < MobMediumDistance) zdo.m_tempSortValue -= 150f;
-                    else zdo.m_tempSortValue += distance;
+                    zdo.m_tempSortValue -= 300f;
                     continue;
                 }
 
-                if (ImportantPrefabs.Contains(prefab) && distance < ImportantObjectDistance) zdo.m_tempSortValue -= 150f;
-                else zdo.m_tempSortValue += distance;
+                // Важные объекты (порталы, кровати, сундуки) — повышаем приоритет поблизости
+                if (ImportantPrefabs.Contains(prefab) && distance < ImportantObjectDistance)
+                {
+                    zdo.m_tempSortValue -= 150f;
+                }
+                else
+                {
+                    // Остальные — мягко по расстоянию
+                    zdo.m_tempSortValue += distance;
+                }
             }
         }
 
-        [HarmonyPostfix]
-        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.ServerSortSendZDOS))]
-        public static void LimitZDOs(List<ZDO> objects)
-        {
-            if (!Helper.IsServer()) return;
-            if (objects.Count <= MaxZDOsPerTick) return;
-
-            objects.Sort((a, b) => a.m_tempSortValue.CompareTo(b.m_tempSortValue));
-            int removeCount = objects.Count - MaxZDOsPerTick;
-            objects.RemoveRange(MaxZDOsPerTick, removeCount);
-
-            if (VBNetTweaks.DebugEnabled.Value) VBNetTweaks.LogVerbose($"ZDO limiter: removed {removeCount} objects");
-        }
-        
         [HarmonyPrefix]
         [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.RemoveObjects))]
         static bool RemoveObjectsPrefix(ZNetScene __instance, List<ZDO> currentNearObjects, List<ZDO> currentDistantObjects)
@@ -380,6 +412,8 @@
             {
                 PerformanceMonitor.Track("RemoveObjects", () =>
                 {
+                    if (currentNearObjects == null || currentDistantObjects == null) return;
+
                     OptimizedRemoveObjects(__instance, currentNearObjects, currentDistantObjects);
                 });
                 return false;

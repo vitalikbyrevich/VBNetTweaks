@@ -41,6 +41,7 @@
     <Compile Include="PlayerSyncSystem.cs" />
     <Compile Include="RpcBatcher.cs" />
     <Compile Include="ShipSyncSystem.cs" />
+    <Compile Include="SupportManager.cs" />
     <None Include="0\BufferPool.cs" />
     <None Include="0\ListPool.cs" />
     <None Include="0\UnifiedSceneOptimizations.cs" />

@@ -32,7 +32,7 @@
                 
             return _playersById.TryGetValue(id, out var player) ? player : null;
         }
-
+        
         public static bool IsPlayerOnShip(long playerId) => _playerShipMap.ContainsKey(playerId);
 
         public static bool IsPlayerAttached(long playerId) => _playerAttachedState.TryGetValue(playerId, out var attached) && attached;
