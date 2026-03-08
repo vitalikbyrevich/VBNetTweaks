@@ -107,6 +107,43 @@ namespace VBNetTweaks
                 VBNetTweaks.LogDebug($"AdaptiveThrottler: ping={maxReliablePing:0.000}s loss={packetLoss:F1} " + $"base={baseInterval:0.000}s -> interval={_currentInterval:0.000}s");
             }
         }
+        
+        public static int GetPlayerPingMs(long peerUid)
+        {
+            var peer = GetPeerByUid(peerUid);
+            if (peer == null) return -1;
+
+            if (_peerStats.TryGetValue(peer, out var stats))
+            {
+                // Если пинг обновлялся менее 3 секунд назад
+                if (Time.time - stats.lastPingTime < 3f)
+                {
+                    // Конвертируем из секунд в миллисекунды
+                    return (int)(stats.lastPing * 1000f);
+                }
+            }
+        
+            // Fallback: используем ванильный метод
+            float pingSec = peer.m_rpc.GetTimeSinceLastPing();
+            if (pingSec < 10f) // Игнорируем слишком старые пинги
+            {
+                return (int)(pingSec * 1000f);
+            }
+        
+            return -1;
+        }
+
+        private static ZNetPeer GetPeerByUid(long uid)
+        {
+            var peers = ZNet.instance?.GetPeers();
+            if (peers == null) return null;
+        
+            foreach (var peer in peers)
+            {
+                if (peer?.m_uid == uid) return peer;
+            }
+            return null;
+        }
 
         // Очистка при дисконнекте
         public static void OnPeerDisconnected(ZNetPeer peer) => _peerStats.Remove(peer);

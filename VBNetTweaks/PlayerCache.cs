@@ -5,13 +5,12 @@
     {
         private static List<Player> _cachedPlayers = new();
         private static Dictionary<long, Player> _playersById = new();
-        private static Dictionary<long, bool> _playerAttachedState = new(); // Кэш состояния прикрепления
-        private static Dictionary<long, ZDOID> _playerShipMap = new(); // Кэш кораблей игроков
+        private static Dictionary<long, bool> _playerAttachedState = new();
+        private static Dictionary<long, ZDOID> _playerShipMap = new();
         
         private static int _cachedFrame = -1;
         private static float _cachedTime = -1f;
 
-        // Основные методы получения игроков
         public static List<Player> GetAll() => GetCached(0.5f);
         public static List<Player> GetCurrentFrame() => GetCached(0f);
         
@@ -82,11 +81,14 @@
         
         [HarmonyPatch(typeof(ZNet), nameof(ZNet.OnNewConnection))]
         [HarmonyPostfix]
-        private static void OnNewConnection() => PlayerCache.Invalidate();
-        
+        private static void OnNewConnection(ZNet __instance, ZNetPeer peer) 
+        { 
+            PlayerCache.Invalidate(); 
+        }
+
         [HarmonyPatch(typeof(ZNet), nameof(ZNet.Disconnect))]
         [HarmonyPostfix]
-        private static void OnDisconnect(ZNetPeer peer)
+        private static void OnDisconnect(ZNet __instance, ZNetPeer peer)
         {
             PlayerCache.Invalidate();
             if (peer != null) PlayerCache.RemovePlayer(peer.m_uid);

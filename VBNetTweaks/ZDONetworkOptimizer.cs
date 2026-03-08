@@ -117,17 +117,6 @@
                 zdoManager.SendZDOToPeers2(dt);
             }
         }
-        
-      /*  private static bool IsItemDrop(ZDO zdo)
-        {
-            int prefab = zdo.GetPrefab();
-            if (prefab == 0) return false;
-
-            GameObject go = ZNetScene.instance?.GetPrefab(prefab);
-            if (!go) return false;
-
-            return go.GetComponent<ItemDrop>() != null;
-        }*/
 
         private static void ApplyZDOThrottle(ZDOMan zdoManager, ZDOMan.ZDOPeer peer)
         {
@@ -162,13 +151,6 @@
                     if (z == null) continue;
 
                     float d = Vector3.Distance(z.GetPosition(), refPos);
-
-                    // 🔥 Исключаем ItemDrop из троттлинга (важно для Jewelcrafting)
-                 /*   if (IsItemDrop(z))
-                    {
-                        z.m_tempSortValue = d - 50f;
-                        continue;
-                    }*/
 
                     // Мобы — всегда обновляются нормально
                     if (IsMob(z))
@@ -344,16 +326,13 @@
 
             matcher.SetOperandAndAdvance(AccessTools.Method(typeof(ZDONetworkOptimizer), nameof(OptimizedSendZDOToPeers)));
             return matcher.InstructionEnumeration();
+            
         }
 
         [HarmonyPrefix]
         [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.ServerSortSendZDOS))]
         public static void ApplyWeights(List<ZDO> objects, Vector3 refPos)
         {
-            if (!Helper.IsServer()) return;
-            if (!VBNetTweaks.EnablePlayerPositionBoost.Value) return;
-
-            // Кэш расстояний на кадр
             if (_cachedFrame != Time.frameCount || _cachedRefPos != refPos)
             {
                 _distanceCache.Clear();
@@ -422,11 +401,12 @@
             {
                 return true;
             }
+            
         }
 
         [HarmonyPatch(typeof(ZNet), nameof(ZNet.OnNewConnection))]
         [HarmonyPostfix]
-        static void OnNewConnection(ZNetPeer peer)
+        static void OnNewConnection(ZNet __instance, ZNetPeer peer)
         {
             if (_compressor == null) return;
 
@@ -437,7 +417,7 @@
 
         [HarmonyPatch(typeof(ZNet), nameof(ZNet.Disconnect))]
         [HarmonyPostfix]
-        static void OnDisconnect(ZNetPeer peer)
+        static void OnDisconnect(ZNet __instance, ZNetPeer peer)
         {
             _peerStatus.Remove(peer.m_socket);
         }

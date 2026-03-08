@@ -50,19 +50,16 @@
             _supportCache[wnt] = (value, Time.time);
         }
 
-        /// <summary>
         /// Вызывается из патча UpdateWear у владельца.
-        /// </summary>
         public static void ProcessDirtyFor(WearNTear wnt)
         {
-            if (wnt == null || !wnt.m_nview || !wnt.m_nview.IsOwner())
+            if (!wnt || !wnt.m_nview || !wnt.m_nview.IsOwner())
                 return;
 
             float now = Time.time;
 
             // Fallback: периодический пересчёт
-            if (!_lastRecalcTime.TryGetValue(wnt, out float last))
-                last = 0f;
+            if (!_lastRecalcTime.TryGetValue(wnt, out float last)) last = 0f;
 
             bool timeExpired = now - last > SupportRecalcInterval;
             bool isDirty = _dirty.Contains(wnt);
@@ -78,9 +75,7 @@
         }
     }
 
-    // -----------------------------
     // ПАТЧИ WearNTear
-    // -----------------------------
 
     [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.ClearCachedSupport))]
     public static class WearNTear_ClearCachedSupport_Patch
@@ -103,10 +98,8 @@
         }
     }
 
-    /// <summary>
     /// Вставляем обработку поддержки в UpdateWear.
     /// ВАЖНО: не ломаем остальную логику, просто добавляем шаг.
-    /// </summary>
     [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateWear))]
     public static class WearNTear_UpdateWear_Patch
     {
@@ -120,10 +113,8 @@
         }
     }
 
-    /// <summary>
     /// Лёгкий кэш для GetSupport.
     /// Только для владельца, чтобы не ломать сетевую модель.
-    /// </summary>
     [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.GetSupport))]
     public static class WearNTear_GetSupport_Patch
     {

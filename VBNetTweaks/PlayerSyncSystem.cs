@@ -105,7 +105,7 @@
 
         [HarmonyPatch(typeof(ZNet), nameof(ZNet.Disconnect))]
         [HarmonyPostfix]
-        public static void OnPeerDisconnect(ZNetPeer peer)
+        public static void OnPeerDisconnect(ZNet __instance, ZNetPeer peer)
         {
             if (peer == null) return;
 
