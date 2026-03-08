@@ -16,15 +16,10 @@ public static class SteamOptimizations
             return instructions;
         }
 
-        // Используем безопасный метод доступа к настройкам
         int newTransferRate = 50000000;
         matcher.SetInstructionAndAdvance(new CodeInstruction(OpCodes.Ldc_I4, newTransferRate));
 
-        // Простое логирование вместо Print
-        if (VBNetTweaks.DebugEnabled.Value)
-        {
-            VBNetTweaks.LogVerbose("Steam transfer rate patched in transpiler");
-        }
+        if (VBNetTweaks.DebugEnabled.Value) VBNetTweaks.LogVerbose("Steam transfer rate patched in transpiler");
 
         VBNetTweaks.LogVerbose($"Steam transfer rate patched: 153600 -> {newTransferRate}");
 
@@ -49,11 +44,7 @@ public static class SteamOptimizations
 
             var setCfg = utils.GetMethod("SetConfigValue", new Type[]
             {
-                typeof(ESteamNetworkingConfigValue),
-                typeof(ESteamNetworkingConfigScope),
-                typeof(IntPtr),
-                typeof(ESteamNetworkingConfigDataType),
-                typeof(IntPtr)
+                typeof(ESteamNetworkingConfigValue), typeof(ESteamNetworkingConfigScope), typeof(IntPtr), typeof(ESteamNetworkingConfigDataType), typeof(IntPtr)
             });
             if (setCfg == null)
             {

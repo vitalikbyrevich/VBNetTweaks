@@ -42,6 +42,7 @@
     <Compile Include="RpcBatcher.cs" />
     <Compile Include="ShipSyncSystem.cs" />
     <Compile Include="SupportManager.cs" />
+    <Compile Include="Utils\CompressionAlgorithm.cs" />
     <Compile Include="ZoneOwnerManager.cs" />
     <None Include="0\BufferPool.cs" />
     <None Include="0\ListPool.cs" />

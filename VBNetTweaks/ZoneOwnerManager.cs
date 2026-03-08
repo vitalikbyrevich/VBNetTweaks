@@ -10,7 +10,7 @@
         }
 
         private static readonly Dictionary<Vector2i, ZoneOwnerInfo> _owners = new();
-        
+
         public static ConfigEntry<bool> Enabled { get; set; }
         public static ConfigEntry<int> PingThreshold { get; set; }
         public static ConfigEntry<int> Hysteresis { get; set; }
@@ -19,7 +19,6 @@
 
         private static float _lastOwnerUpdateTime;
 
-        // Инициализация
         public static void Initialize()
         {
             if (!ZNet.instance?.IsServer() ?? true) return;
@@ -37,13 +36,11 @@
                      $"OwnerUpdateInterval={OwnerUpdateInterval?.Value ?? 2f}s");
         }
 
-        // Получить пинг игрока из AdaptiveThrottler
         private static int GetPlayerPing(long peerUid)
         {
             return AdaptiveThrottler.GetPlayerPingMs(peerUid);
         }
 
-        // Очистка данных игрока при выходе
         public static void RemovePlayer(long peerUid)
         {
         }
@@ -101,7 +98,7 @@
         private static void SetZoneOwner(Vector2i zone, ZNetPeer newOwner, ZoneOwnerInfo existingInfo)
         {
             int ping = GetPlayerPing(newOwner.m_uid);
-            
+
             if (existingInfo != null)
             {
                 existingInfo.OwnerPeerId = newOwner.m_uid;
@@ -137,14 +134,15 @@
         {
             var list = new List<ZNetPeer>();
             var peers = ZNet.instance.GetPeers();
-            
+
             foreach (var peer in peers)
             {
                 if (peer?.m_socket == null) continue;
-                
+
                 Vector2i pZone = ZoneSystem.GetZone(peer.GetRefPos());
                 if (pZone == zone) list.Add(peer);
             }
+
             return list;
         }
 
@@ -155,6 +153,7 @@
             {
                 if (peer?.m_uid == peerId) return peer;
             }
+
             return null;
         }
 
@@ -187,18 +186,24 @@
         }
 
         public static float GetOwnerUpdateInterval() => OwnerUpdateInterval?.Value ?? 2f;
-    }
 
-    [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Update))]
-    public static class ZoneSystem_Update_Patch
-    {
+        private static ZNetPeer GetPeerByRpc(ZRpc rpc)
+        {
+            var peers = ZNet.instance.GetPeers();
+            foreach (var peer in peers)
+            {
+                if (peer?.m_rpc == rpc) return peer;
+            }
+            return null;
+        }
+
+
+        [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Update))]
         [HarmonyPostfix]
         static void Postfix()
         {
-            if (!ZNet.instance?.IsServer() ?? true)
-                return;
+            if (!ZNet.instance?.IsServer() ?? true) return;
 
-            // Проверяем, включена ли система
             if (ZoneOwnerManager.Enabled != null && !ZoneOwnerManager.Enabled.Value) return;
 
             if (Time.time - ZoneOwnerManager.LastOwnerUpdateTime < ZoneOwnerManager.GetOwnerUpdateInterval()) return;
@@ -213,11 +218,17 @@
                 ZoneOwnerManager.UpdateZoneOwnership(kvp.Key);
             }
         }
-    }
 
-    [HarmonyPatch(typeof(ZNet), nameof(ZNet.RPC_CharacterID))]
-    public static class ZNet_RPC_CharacterID_Patch
-    {
+        [HarmonyPatch(typeof(ZNet), nameof(ZNet.OnNewConnection))]
+        [HarmonyPostfix]
+        static void Postfix(ZNet __instance, ZNetPeer peer)
+        {
+            if (!ZNet.instance?.IsServer() ?? true) return;
+
+            ZoneOwnerManager.Initialize();
+        }
+
+        [HarmonyPatch(typeof(ZNet), nameof(ZNet.RPC_CharacterID))]
         [HarmonyPostfix]
         static void Postfix(ZNet __instance, ZRpc rpc, ZDOID characterID)
         {
@@ -231,40 +242,13 @@
                     ZLog.Log($"[ZoneOwnerManager] Player {GetPeerName(peer)} joined world");
                 }
             }
-            catch { }
-        }
-
-        private static ZNetPeer GetPeerByRpc(ZRpc rpc)
-        {
-            var peers = ZNet.instance.GetPeers();
-            foreach (var peer in peers)
+            catch
             {
-                if (peer?.m_rpc == rpc) return peer;
             }
-            return null;
         }
 
-        private static string GetPeerName(ZNetPeer peer)
-        {
-            return !string.IsNullOrEmpty(peer.m_playerName) ? peer.m_playerName : $"Peer_{peer.m_uid}";
-        }
-    }
 
-    [HarmonyPatch(typeof(ZNet), nameof(ZNet.OnNewConnection))]
-    public static class ZNet_OnNewConnection_Patch
-    {
-        [HarmonyPostfix]
-        static void Postfix(ZNet __instance, ZNetPeer peer)
-        {
-            if (!ZNet.instance?.IsServer() ?? true) return;
-
-            ZoneOwnerManager.Initialize();
-        }
-    }
-
-    [HarmonyPatch(typeof(ZNet), nameof(ZNet.Disconnect))]
-    public static class ZNet_Disconnect_Patch
-    {
+        [HarmonyPatch(typeof(ZNet), nameof(ZNet.Disconnect))]
         [HarmonyPrefix]
         static void Prefix(ZNet __instance, ZNetPeer peer)
         {

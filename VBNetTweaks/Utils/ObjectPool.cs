@@ -1,6 +1,4 @@
-﻿using System.Diagnostics;
-
-namespace VBNetTweaks.Utils
+﻿namespace VBNetTweaks.Utils
 {
     [HarmonyPatch]
     public static class ObjectPool
@@ -14,7 +12,6 @@ namespace VBNetTweaks.Utils
         private static readonly Stack<ZPackage> _pkgPool = new();
         private const int MaxPkgPoolSize = 128;
         
-        // Для List<T>
         public static List<T> RentList<T>()
         {
             if (Pool<List<T>>.Stack.Count > 0)
@@ -36,7 +33,6 @@ namespace VBNetTweaks.Utils
             if (Pool<List<T>>.Stack.Count < Pool<List<T>>.MaxSize) Pool<List<T>>.Stack.Push(list);
         }
 
-        // Для ZPackage
         public static ZPackage RentPackage()
         {
             if (_pkgPool.Count > 0)

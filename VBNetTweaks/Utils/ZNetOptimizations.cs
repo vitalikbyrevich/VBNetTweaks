@@ -12,10 +12,8 @@
         {
             if (!__instance || !ZNet.instance) return;
 
-            // RpcBatcher обновляется каждый кадр (нужно для своевременной отправки)
             RpcBatcher.Update();
 
-            // AdaptiveThrottler обновляем реже, так как ему не нужна высокая частота
             float now = Time.time;
             if (now - _lastThrottlerUpdate >= THROTTLER_INTERVAL)
             {

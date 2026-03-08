@@ -1,6 +1,4 @@
-﻿
-
-namespace VBNetTweaks
+﻿namespace VBNetTweaks
 {
     public static class AdaptiveThrottler
     {
@@ -47,7 +45,6 @@ namespace VBNetTweaks
                 var p = peers[i];
                 if (p?.m_rpc == null) continue;
 
-                // Получаем статистику пира
                 if (!_peerStats.TryGetValue(p, out var stats))
                 {
                     stats = new PeerStats();
@@ -56,23 +53,17 @@ namespace VBNetTweaks
 
                 float ping = p.m_rpc.GetTimeSinceLastPing();
 
-                // Обновляем статистику
-                if (ping < 10f) // Разумный пинг (меньше 10 секунд)
+                if (ping < 10f) 
                 {
-                    if (ping > stats.lastPing * 2f) // Пинг резко вырос
-                        stats.missedPings++;
+                    if (ping > stats.lastPing * 2f) stats.missedPings++;
                     else stats.missedPings = Mathf.Max(0, stats.missedPings - 1);
 
                     stats.lastPing = ping;
                     stats.lastPingTime = now;
                     activePeers++;
                 }
-                else if (now - stats.lastPingTime > 5f) // Нет пинга >5 секунд
-                {
-                    stats.missedPings += 2; // Штраф
-                }
+                else if (now - stats.lastPingTime > 5f) stats.missedPings += 2;
 
-                // Используем пинг только если он актуален
                 if (now - stats.lastPingTime < 3f)
                 {
                     if (ping > maxReliablePing) maxReliablePing = ping;
@@ -86,18 +77,15 @@ namespace VBNetTweaks
                 return;
             }
 
-            packetLoss /= activePeers; // Средняя потеря пакетов
+            packetLoss /= activePeers;
 
             float baseInterval = VBNetTweaks.SendInterval?.Value ?? 0.05f;
             float newInterval = baseInterval;
 
-            // Адаптируем на основе пинга
             if (maxReliablePing < LowPingThreshold) newInterval = Mathf.Max(MinInterval, baseInterval * 0.7f);
             else if (maxReliablePing > HighPingThreshold) newInterval = Mathf.Min(MaxInterval, baseInterval * 1.5f);
 
-            // Дополнительная адаптация на основе потери пакетов
-            if (packetLoss > 2f) // Много потерянных пингов
-                newInterval = Mathf.Min(MaxInterval, newInterval * 1.3f);
+            if (packetLoss > 2f) newInterval = Mathf.Min(MaxInterval, newInterval * 1.3f);
             else if (packetLoss < 0.5f && maxReliablePing < HighPingThreshold) newInterval = Mathf.Max(MinInterval, newInterval * 0.9f);
 
             _currentInterval = newInterval;
@@ -115,20 +103,11 @@ namespace VBNetTweaks
 
             if (_peerStats.TryGetValue(peer, out var stats))
             {
-                // Если пинг обновлялся менее 3 секунд назад
-                if (Time.time - stats.lastPingTime < 3f)
-                {
-                    // Конвертируем из секунд в миллисекунды
-                    return (int)(stats.lastPing * 1000f);
-                }
+                if (Time.time - stats.lastPingTime < 3f) return (int)(stats.lastPing * 1000f);
             }
         
-            // Fallback: используем ванильный метод
             float pingSec = peer.m_rpc.GetTimeSinceLastPing();
-            if (pingSec < 10f) // Игнорируем слишком старые пинги
-            {
-                return (int)(pingSec * 1000f);
-            }
+            if (pingSec < 10f) return (int)(pingSec * 1000f);
         
             return -1;
         }
@@ -145,7 +124,6 @@ namespace VBNetTweaks
             return null;
         }
 
-        // Очистка при дисконнекте
         public static void OnPeerDisconnected(ZNetPeer peer) => _peerStats.Remove(peer);
 
         public static float GetInterval(float fallback) => _currentInterval > 0f ? _currentInterval : fallback;

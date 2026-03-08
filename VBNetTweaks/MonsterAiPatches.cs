@@ -3,22 +3,13 @@
     [HarmonyPatch]
     public static class MonsterAiPatches
     {
-        // ============================================================
-        // 1. ОТКЛЮЧАЕМ ПАУЗУ ЭВЕНТОВ
-        // ============================================================
-        // Ваниль вызывает RandomEvent.Update(..., playerInArea)
-        // Мы заменяем playerInArea = true, чтобы событие НИКОГДА не ставилось на паузу.
-        // ============================================================
-
         [HarmonyPatch(typeof(RandEventSystem), nameof(RandEventSystem.FixedUpdate))]
         [HarmonyTranspiler]
         static IEnumerable<CodeInstruction> DisableEventPause(IEnumerable<CodeInstruction> instructions)
         {
             var m = new CodeMatcher(instructions);
 
-            // Ищем вызов IsAnyPlayerInEventArea()
-            m.MatchForward(false, new CodeMatch(OpCodes.Callvirt, AccessTools.Method(typeof(RandEventSystem), nameof(RandEventSystem.IsAnyPlayerInEventArea)))
-            );
+            m.MatchForward(false, new CodeMatch(OpCodes.Callvirt, AccessTools.Method(typeof(RandEventSystem), nameof(RandEventSystem.IsAnyPlayerInEventArea))));
 
             if (m.IsInvalid) return instructions;
 
@@ -26,11 +17,6 @@
 
             return m.InstructionEnumeration();
         }
-
-
-        // ============================================================
-        // 2. ОПТИМИЗИРУЕМ СПАВН (оставляем твой патч)
-        // ============================================================
 
         [HarmonyPatch(typeof(SpawnSystem), nameof(SpawnSystem.UpdateSpawning))]
         [HarmonyTranspiler]
@@ -45,7 +31,6 @@
             );
             if (m.IsInvalid) return instructions;
 
-            // Удаляем проверку на локального игрока
             m.RemoveInstructions(3);
 
             m.SetInstructionAndAdvance(new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(Player), nameof(Player.GetAllPlayers))));
@@ -66,16 +51,10 @@
                 var p = all[i];
                 if (!p) continue;
                 var pZone = ZoneSystem.GetZone(p.transform.position);
-                if (!ZNetScene.OutsideActiveArea(p.transform.position, pZone, activeArea))
-                    return true;
+                if (!ZNetScene.OutsideActiveArea(p.transform.position, pZone, activeArea)) return true;
             }
             return false;
         }
-
-
-        // ============================================================
-        // 3. МУЛЬТИ-ЭВЕНТЫ
-        // ============================================================
 
         private static readonly List<ActiveEvent> _events = new();
 
@@ -83,17 +62,14 @@
         [HarmonyPrefix]
         static bool MultiEvent_Start(RandEventSystem __instance, RandomEvent ev, Vector3 pos)
         {
-            if (ev == null)
-                return false;
+            if (ev == null) return false;
 
-            // Создаём независимую копию
             var clone = ev.Clone();
             clone.m_pos = pos;
             clone.OnStart();
 
             _events.Add(new ActiveEvent(clone));
 
-            // Блокируем ванильный SetRandomEvent
             return false;
         }
 
@@ -109,23 +85,14 @@
             }
         }
 
-
-        // ============================================================
-        // 4. КЛАСС ОДНОГО ЭВЕНТА
-        // ============================================================
-
         private class ActiveEvent
         {
             private readonly RandomEvent _ev;
 
-            public ActiveEvent(RandomEvent ev)
-            {
-                _ev = ev;
-            }
+            public ActiveEvent(RandomEvent ev) => _ev = ev;
 
             public bool Update(float dt)
             {
-                // Принудительно: playerInArea = true
                 bool finished = _ev.Update(server: true, active: false, playerInArea: true, dt);
 
                 if (finished)

@@ -25,10 +25,7 @@ public static class PerformanceMonitor
         action();
         sw.Stop();
 
-        if (!_samples.TryGetValue(name, out var sample))
-        {
-            sample = new Sample { Name = name };
-        }
+        if (!_samples.TryGetValue(name, out var sample)) sample = new Sample { Name = name };
 
         sample.TotalTime += sw.ElapsedMilliseconds;
         sample.Count++;
@@ -43,7 +40,6 @@ public static class PerformanceMonitor
             sample.Count = 0;
             sample.LastLogTime = now;
         }
-
         _samples[name] = sample;
     }
 }

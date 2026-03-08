@@ -52,16 +52,18 @@
 
             try
             {
-                string algo = VBNetTweaks.CompressionAlgorithm.Value;
-                if (algo.Equals("Zstd", StringComparison.OrdinalIgnoreCase))
+                int level = VBNetTweaks.m_CompressionLevel.Value;
+                var algo = VBNetTweaks.m_CompressionAlgorithm.Value;
+        
+                if (algo == CompressionAlgorithm.Zstd)
                 {
-                    _compressor = new ZstdCompressor();
-                    VBNetTweaks.LogDebug("Using Zstd compressor");
+                    _compressor = new ZstdCompressor(level);
+                    VBNetTweaks.LogDebug($"Using Zstd compressor (level {level})");
                 }
                 else
                 {
-                    _compressor = new DeflateCompressor();
-                    VBNetTweaks.LogDebug("Using Deflate compressor");
+                    _compressor = new DeflateCompressor(level);
+                    VBNetTweaks.LogDebug($"Using Deflate compressor (level {level})");
                 }
             }
             catch (Exception e)
@@ -69,7 +71,7 @@
                 VBNetTweaks.LogDebug($"Compression init failed: {e.Message}, using Deflate fallback");
                 try
                 {
-                    _compressor = new DeflateCompressor();
+                    _compressor = new DeflateCompressor(3); // fallback
                 }
                 catch { }
             }
@@ -101,8 +103,6 @@
 
                     PerformanceMonitor.Track("SendZDOs", () =>
                     {
-                        // Внутри SendZDOs ваниль уже делает мягкий лимит по размеру пакета,
-                        // поэтому мы не режем список объектов сами.
                         zdoManager.SendZDOs(peer, flush: false);
                     });
 
@@ -138,7 +138,6 @@
 
                 float throttleDist = VBNetTweaks.ZDOThrottleDistance.Value;
 
-                // Мягкий троттлинг: слегка смещаем приоритет, но не убиваем объекты
                 foreach (var z in near)
                 {
                     if (z == null) continue;
@@ -152,7 +151,6 @@
 
                     float d = Vector3.Distance(z.GetPosition(), refPos);
 
-                    // Мобы — всегда обновляются нормально
                     if (IsMob(z))
                     {
                         z.m_tempSortValue = d - 50f;
@@ -165,8 +163,8 @@
             }
             finally
             {
-                if (near != null) Utils.ObjectPool.ReturnList(near);
-                if (distant != null) Utils.ObjectPool.ReturnList(distant);
+                if (near != null) ObjectPool.ReturnList(near);
+                if (distant != null) ObjectPool.ReturnList(distant);
             }
         }
 
@@ -269,16 +267,30 @@
             bool shouldCompress = VBNetTweaks.EnableNetworkCompression.Value && enabled && status.IsCompatible;
             SendCompressionStarted(peer, shouldCompress);
         }
-
+        
         private static void SendCompressionStarted(ZNetPeer peer, bool started)
         {
             if (!_peerStatus.TryGetValue(peer.m_socket, out var status)) return;
             if (status.SendingCompressed == started) return;
 
             peer.m_rpc.Invoke(RPC_STARTED, started);
-            peer.m_socket.Flush();
+    
+            var socketType = peer.m_socket.GetType();
+            var flushMethod = socketType.GetMethod("Flush", Type.EmptyTypes);
+    
+            if (flushMethod != null && flushMethod.DeclaringType != typeof(object))
+            {
+                try
+                {
+                    peer.m_socket.Flush();
+                }
+                catch (Exception e)
+                {
+                    VBNetTweaks.LogDebug($"Error flushing socket: {e.Message}");
+                }
+            }
+    
             status.SendingCompressed = started;
-
             VBNetTweaks.LogDebug($"Compression {(started ? "started" : "stopped")} with {GetPeerName(peer)}");
         }
 
@@ -346,14 +358,12 @@
 
                 int prefab = zdo.GetPrefab();
 
-                // Игроки — всегда топ-приоритет
                 if (prefab == PlayerPrefab)
                 {
                     zdo.m_tempSortValue -= 500f;
                     continue;
                 }
 
-                // Корабли — высоко, особенно с игроками
                 if (ShipPrefabs.Contains(prefab))
                 {
                     bool hasPlayers = ShipSyncSystem.ShipHasPlayers(zdo.m_uid);
@@ -363,21 +373,18 @@
 
                 float distance = GetDistance(zdo, refPos);
 
-                // Мобы — всегда должны получать обновления, без starvation
                 if (IsMob(zdo))
                 {
                     zdo.m_tempSortValue -= 300f;
                     continue;
                 }
 
-                // Важные объекты (порталы, кровати, сундуки) — повышаем приоритет поблизости
                 if (ImportantPrefabs.Contains(prefab) && distance < ImportantObjectDistance)
                 {
                     zdo.m_tempSortValue -= 150f;
                 }
                 else
                 {
-                    // Остальные — мягко по расстоянию
                     zdo.m_tempSortValue += distance;
                 }
             }

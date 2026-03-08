@@ -1,11 +1,5 @@
 ﻿namespace VBNetTweaks
 {
-    public enum CompressionAlgorithm
-    {
-        Deflate,
-        Zstd
-    }
-    
     [BepInPlugin(ModGUID, ModName, ModVersion)]
     [BepInIncompatibility("CacoFFF.valheim.LeanNet")]
     [BepInIncompatibility("redseiko.valheim.scenic")]
@@ -16,7 +10,7 @@
     public class VBNetTweaks : BaseUnityPlugin
     {
         private const string ModName = "VBNetTweaks";
-        private const string ModVersion = "0.1.8";
+        private const string ModVersion = "0.1.9";
         private const string ModGUID = "VitByr.VBNetTweaks";
         
         
@@ -40,7 +34,7 @@
         public static ConfigEntry<int> SteamSendBufferSize;
         
         public static ConfigEntry<bool> EnableNetworkCompression;
-        public static ConfigEntry<string> CompressionAlgorithm;
+        public static ConfigEntry<CompressionAlgorithm> m_CompressionAlgorithm;
         public static ConfigEntry<int> m_CompressionLevel;
 
         public static ConfigEntry<bool> DebugEnabled;
@@ -62,9 +56,11 @@
             DebugEnabled = Config.Bind("01 - General", "DebugEnabled", false, new ConfigDescription("Включить отладочный вывод"));
             VerboseLogging = Config.Bind("01 - General", "VerboseLogging", false, new ConfigDescription("Включить подробное логирование успешных операций"));
                 
-            EnableNetworkCompression = Config.Bind("Network", "EnableCompression", true, "Enable network compression (safe, negotiated between peers)");
-            CompressionAlgorithm = Config.Bind("Network", "CompressionAlgorithm", "Deflate", "Deflate (built-in) or Zstd (requires ZstdSharp)");
-            m_CompressionLevel = Config.Bind("Network", "CompressionLevel", 1, "The higher the load on the processor increases. Max 10");
+            EnableNetworkCompression = Config.Bind("02 - Network", "EnableCompression", true, "Enable network compression (safe, negotiated between peers)");
+            m_CompressionAlgorithm = Config.Bind("02 - Network", "CompressionAlgorithm", CompressionAlgorithm.Deflate, new ConfigDescription("Алгоритм сжатия: Deflate (встроенный) или Zstd (требует ZstdSharp)", null, new ConfigurationManagerAttributes { Order = 2 }));
+            m_CompressionLevel = Config.Bind("02 - Network", "CompressionLevel", 2, new ConfigDescription("Уровень сжатия (1-10). Для Deflate: 1=Fastest, 10=Optimal. Для Zstd: 1-22",
+                    new AcceptableValueRange<int>(1, 10), new ConfigurationManagerAttributes { Order = 1 })
+            );
 
              if (ZRoutedRpc.instance != null)
              {
@@ -72,10 +68,7 @@
                  Logger.LogInfo("VBNetTweaks: VBNT_RPCBatch registered");
              }
     
-             if (EnableNetworkCompression.Value)
-             {
-                 ZDONetworkOptimizer.Initialize();
-             }
+             if (EnableNetworkCompression.Value) ZDONetworkOptimizer.Initialize();
 
             _harmony = new Harmony(ModGUID);
             _harmony.PatchAll(typeof(ZDONetworkOptimizer)); 
@@ -90,15 +83,10 @@
             _harmony.PatchAll(typeof(WearNTear_GetSupport_Patch));
             _harmony.PatchAll(typeof(WearNTear_RPC_Damage_Patch));
             _harmony.PatchAll(typeof(WearNTear_Destroy_Patch));
-            _harmony.PatchAll(typeof(ZoneSystem_Update_Patch));
-            _harmony.PatchAll(typeof(ZNet_RPC_CharacterID_Patch));
-            _harmony.PatchAll(typeof(ZNet_OnNewConnection_Patch));
-            _harmony.PatchAll(typeof(ZNet_Disconnect_Patch));
+            _harmony.PatchAll(typeof(ZoneOwnerManager));
 
-            // Серверные патчи — через корутину
             StartCoroutine(DelayedServerPatchInit());
 
-            // Отложенная инициализация серверных настроек
             StartCoroutine(DelayedServerConfigInit());
 
             Logger.LogInfo("VBNetTweaks загружен!");
@@ -135,10 +123,7 @@
                 yield return new WaitForSeconds(0.25f);
             }
 
-            if (EnableNetworkCompression.Value)
-            {
-                ZDONetworkOptimizer.Initialize();
-            }
+            if (EnableNetworkCompression.Value) ZDONetworkOptimizer.Initialize();
 
             if (Helper.IsServer())
             {
@@ -169,14 +154,10 @@
                 
                 var zoneOwnerSection = "07 - Zone Owner Manager";
                 ZoneOwnerManager.Enabled = Config.BindConfig(zoneOwnerSection, "Enabled", true, "Включить автоматическую передачу владения зоной на основе пинга", synced: true);
-                ZoneOwnerManager.PingThreshold = Config.BindConfig(zoneOwnerSection, "PingThreshold", 100, 
-                    "Порог пинга (мс). Если пинг владельца выше этого значения - возможна передача.", synced: true);
-                ZoneOwnerManager.Hysteresis = Config.BindConfig(zoneOwnerSection, "Hysteresis", 20, 
-                    "Гистерезис (мс). Новый кандидат должен быть как минимум на столько мс лучше текущего владельца.", synced: true);
-                ZoneOwnerManager.TransferCooldown = Config.BindConfig(zoneOwnerSection, "TransferCooldown", 5f, 
-                    "Минимальное время (сек) между передачами владения одной зоны.", synced: true);
-                ZoneOwnerManager.OwnerUpdateInterval = Config.BindConfig(zoneOwnerSection, "OwnerUpdateInterval", 2f, 
-                    "Как часто (сек) проверять необходимость передачи владения.", synced: true);
+                ZoneOwnerManager.PingThreshold = Config.BindConfig(zoneOwnerSection, "PingThreshold", 100, "Порог пинга (мс). Если пинг владельца выше этого значения - возможна передача.", synced: true);
+                ZoneOwnerManager.Hysteresis = Config.BindConfig(zoneOwnerSection, "Hysteresis", 20, "Гистерезис (мс). Новый кандидат должен быть как минимум на столько мс лучше текущего владельца.", synced: true);
+                ZoneOwnerManager.TransferCooldown = Config.BindConfig(zoneOwnerSection, "TransferCooldown", 5f, "Минимальное время (сек) между передачами владения одной зоны.", synced: true);
+                ZoneOwnerManager.OwnerUpdateInterval = Config.BindConfig(zoneOwnerSection, "OwnerUpdateInterval", 2f, "Как часто (сек) проверять необходимость передачи владения.", synced: true);
 
                 _serverConfigsInitialized = true;
                 Logger.LogInfo("Серверные настройки VBNetTweaks инициализированы");
@@ -186,10 +167,7 @@
             else Logger.LogInfo("VBNetTweaks работает в клиентском режиме");
         }
 
-        private void OnDestroy()
-        {
-            _harmony?.UnpatchSelf();
-        }
+        private void OnDestroy() => _harmony?.UnpatchSelf();
 
         public static void LogDebug(string message)
         {

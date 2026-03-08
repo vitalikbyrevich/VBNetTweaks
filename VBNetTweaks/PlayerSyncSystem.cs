@@ -83,10 +83,8 @@
             bool isAttached = PlayerCache.IsPlayerAttached(owner);
             bool isOnShip = PlayerCache.IsPlayerOnShip(owner);
 
-            // Если игрок прикреплен или на корабле - полагаемся на ShipSyncSystem
             if (isAttached || isOnShip) return;
 
-            // Только для игроков не на кораблях
             if (VBNetTweaks.EnablePlayerPrediction.Value)
             {
                 float predictTime = Time.deltaTime * 1.5f;
