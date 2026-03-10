@@ -37,7 +37,8 @@
         [HarmonyPostfix]
         public static void CapturePlayerState(ZNetView __instance)
         {
-            if (Helper.IsServer() || !__instance) return;
+           // if (Helper.IsServer() || !__instance) return;
+           if (!__instance) return;
 
             Player player = __instance.GetComponent<Player>();
             if (!player) return;

@@ -32,7 +32,7 @@ public static class SteamOptimizations
     {
         try
         {
-            if (VBNetTweaks.EnableSteamSendRate?.Value != true) return;
+            if (VBNetTweaks.ModuleSteamOptimizations?.Value != true) return;
 
             var asm = typeof(ZSteamSocket).Assembly;
             var utils = asm.GetType("Steamworks.SteamNetworkingUtils");

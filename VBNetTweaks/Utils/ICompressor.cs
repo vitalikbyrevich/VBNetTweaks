@@ -1,4 +1,4 @@
-﻿namespace VBNetTweaks
+﻿namespace VBNetTweaks.Utils
 {
     public interface ICompressor
     {

@@ -8,7 +8,7 @@
         private static int _cachedFrame = -1;
 
         private const float ImportantObjectDistance = 200f;
-        private static readonly int COMPRESSION_VERSION = VBNetTweaks.m_CompressionLevel.Value;
+        private static readonly int COMPRESSION_VERSION = VBNetTweaks.CompressionLevel.Value;
 
         private static readonly int PlayerPrefab = "Player".GetStableHashCode();
         private static readonly HashSet<int> ShipPrefabs = new()
@@ -48,11 +48,11 @@
 
         public static void Initialize()
         {
-            if (!VBNetTweaks.EnableNetworkCompression.Value) return;
+            if (!VBNetTweaks.ModuleCompression.Value) return;
 
             try
             {
-                int level = VBNetTweaks.m_CompressionLevel.Value;
+                int level = VBNetTweaks.CompressionLevel.Value;
                 var algo = VBNetTweaks.m_CompressionAlgorithm.Value;
         
                 if (algo == CompressionAlgorithm.Zstd)
@@ -99,7 +99,7 @@
                     var peer = zdoManager.m_peers[peerIndex];
                     if (peer?.m_peer?.m_socket?.IsConnected() != true) continue;
 
-                    if (Helper.IsServer() && VBNetTweaks.EnableZDOThrottling.Value) ApplyZDOThrottle(zdoManager, peer);
+                    if (Helper.IsServer() && VBNetTweaks.ModuleZDOThrottling.Value) ApplyZDOThrottle(zdoManager, peer);
 
                     PerformanceMonitor.Track("SendZDOs", () =>
                     {
@@ -120,6 +120,7 @@
 
         private static void ApplyZDOThrottle(ZDOMan zdoManager, ZDOMan.ZDOPeer peer)
         {
+            if (!VBNetTweaks.ModuleZDOThrottling.Value) return;
             List<ZDO> near = null;
             List<ZDO> distant = null;
 
@@ -254,7 +255,7 @@
 
         private static void SendCompressionEnabledStatus(ZNetPeer peer)
         {
-            bool enabled = VBNetTweaks.EnableNetworkCompression.Value;
+            bool enabled = VBNetTweaks.ModuleCompression.Value;
             peer.m_rpc.Invoke(RPC_ENABLED, enabled);
         }
 
@@ -264,7 +265,7 @@
 
             status.PeerEnabled = enabled;
 
-            bool shouldCompress = VBNetTweaks.EnableNetworkCompression.Value && enabled && status.IsCompatible;
+            bool shouldCompress = VBNetTweaks.ModuleCompression.Value && enabled && status.IsCompatible;
             SendCompressionStarted(peer, shouldCompress);
         }
         
