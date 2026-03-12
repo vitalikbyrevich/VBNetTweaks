@@ -35,6 +35,7 @@
         private const string RPC_STARTED = "VBNT.CompressionStarted";
 
         private static ICompressor _compressor;
+        private static bool _serverMode;
         private static readonly Dictionary<ISocket, PeerCompressionStatus> _peerStatus = new();
 
         private class PeerCompressionStatus
@@ -46,15 +47,13 @@
             public bool IsCompatible => Version == COMPRESSION_VERSION;
         }
 
-        public static void Initialize()
+        private static void InitCompressor()
         {
-            if (!VBNetTweaks.ModuleCompression.Value) return;
-
             try
             {
                 int level = VBNetTweaks.CompressionLevel.Value;
                 var algo = VBNetTweaks.m_CompressionAlgorithm.Value;
-        
+
                 if (algo == CompressionAlgorithm.Zstd)
                 {
                     _compressor = new ZstdCompressor(level);
@@ -71,9 +70,63 @@
                 VBNetTweaks.LogDebug($"Compression init failed: {e.Message}, using Deflate fallback");
                 try
                 {
-                    _compressor = new DeflateCompressor(3); // fallback
+                    _compressor = new DeflateCompressor(3);
                 }
                 catch { }
+            }
+        }
+
+        public static void Initialize()
+        {
+            if (!VBNetTweaks.ModuleCompression.Value) return;
+    
+            _serverMode = Helper.IsServer();
+    
+            if (_serverMode)
+            {
+                InitCompressor();
+                VBNetTweaks.LogDebug("Compression initialized in SERVER mode");
+            }
+            else
+            {
+                if (VBNetTweaks.EnableClientCompression.Value)
+                {
+                    InitCompressor();
+                    VBNetTweaks.LogDebug("Compression initialized in CLIENT mode");
+                }
+                else VBNetTweaks.LogDebug("Compression disabled on client");
+            }
+        }
+    
+        public static bool ShouldCompressSend(ISocket socket)
+        {
+            if (_serverMode) return _compressor != null;
+            if (!_peerStatus.TryGetValue(socket, out var peerStatus)) return false;
+            return peerStatus.SendingCompressed && _compressor != null;
+        }
+    
+        public static bool ShouldCompressReceive(ISocket socket)
+        {
+            if (!_peerStatus.TryGetValue(socket, out var peerStatus)) return false;
+            if (!_serverMode && peerStatus.ReceivingCompressed) return true;
+            return peerStatus.ReceivingCompressed && _compressor != null;
+        }
+        
+        public static byte[] Decompress(byte[] data)
+        {
+            if (_compressor != null) return _compressor.Decompress(data);
+    
+            try
+            {
+                using var ms = new MemoryStream(data);
+                using var ds = new DeflateStream(ms, CompressionMode.Decompress);
+                using var output = new MemoryStream();
+                ds.CopyTo(output);
+                return output.ToArray();
+            }
+            catch
+            {
+                return data;
             }
         }
 
@@ -129,21 +182,19 @@
                 Vector3 refPos = peer.m_peer.GetRefPos();
                 Vector2i zone = ZoneSystem.GetZone(refPos);
 
-                near = Utils.ObjectPool.RentList<ZDO>();
-                distant = Utils.ObjectPool.RentList<ZDO>();
+                near = ObjectPool.RentList<ZDO>();
+                distant = ObjectPool.RentList<ZDO>();
 
                 int activeArea = ZoneSystem.instance?.m_activeArea ?? 3;
                 int distantArea = ZoneSystem.instance?.m_activeDistantArea ?? 5;
 
                 zdoManager.FindSectorObjects(zone, activeArea, distantArea, near, distant);
 
-                float throttleDist = VBNetTweaks.ZDOThrottleDistance.Value;
-
                 foreach (var z in near)
                 {
                     if (z == null) continue;
                     float d = Vector3.Distance(z.GetPosition(), refPos);
-                    z.m_tempSortValue = d - 100f; // ближние всегда в приоритете
+                    z.m_tempSortValue = d - 100f;
                 }
 
                 foreach (var z in distant)
@@ -158,7 +209,6 @@
                         continue;
                     }
 
-                    // Остальные — обычный мягкий троттлинг
                     z.m_tempSortValue = d + 150f;
                 }
             }
@@ -242,11 +292,11 @@
 
         private static void RPC_CompressionVersion(ZNetPeer peer, int version)
         {
-            if (!_peerStatus.TryGetValue(peer.m_socket, out var status)) return;
+            if (!_peerStatus.TryGetValue(peer.m_socket, out var peerStatus)) return;
 
-            status.Version = version;
+            peerStatus.Version = version;
 
-            if (status.IsCompatible)
+            if (peerStatus.IsCompatible)
             {
                 VBNetTweaks.LogDebug($"Compression compatible with {GetPeerName(peer)}");
                 SendCompressionEnabledStatus(peer);
@@ -261,18 +311,27 @@
 
         private static void RPC_CompressionEnabled(ZNetPeer peer, bool enabled)
         {
-            if (!_peerStatus.TryGetValue(peer.m_socket, out var status)) return;
+            if (!_peerStatus.TryGetValue(peer.m_socket, out var peerStatus)) return;
 
-            status.PeerEnabled = enabled;
+            peerStatus.PeerEnabled = enabled;
 
-            bool shouldCompress = VBNetTweaks.ModuleCompression.Value && enabled && status.IsCompatible;
+            bool shouldCompress = VBNetTweaks.ModuleCompression.Value;
+    
+            if (!Helper.IsServer())
+            {
+                shouldCompress = shouldCompress && VBNetTweaks.EnableClientCompression.Value;
+            }
+    
+            shouldCompress = shouldCompress && enabled && peerStatus.IsCompatible;
+    
             SendCompressionStarted(peer, shouldCompress);
         }
         
         private static void SendCompressionStarted(ZNetPeer peer, bool started)
         {
-            if (!_peerStatus.TryGetValue(peer.m_socket, out var status)) return;
-            if (status.SendingCompressed == started) return;
+            if (!_peerStatus.TryGetValue(peer.m_socket, out var peerStatus)) return;
+        
+            if (peerStatus.SendingCompressed == started) return;
 
             peer.m_rpc.Invoke(RPC_STARTED, started);
     
@@ -291,27 +350,20 @@
                 }
             }
     
-            status.SendingCompressed = started;
+            peerStatus.SendingCompressed = started;
             VBNetTweaks.LogDebug($"Compression {(started ? "started" : "stopped")} with {GetPeerName(peer)}");
         }
 
         private static void RPC_CompressionStarted(ZNetPeer peer, bool started)
         {
-            if (!_peerStatus.TryGetValue(peer.m_socket, out var status)) return;
+            if (!_peerStatus.TryGetValue(peer.m_socket, out var peerStatus)) return;
 
-            status.ReceivingCompressed = started;
+            peerStatus.ReceivingCompressed = started;
             VBNetTweaks.LogDebug($"Receiving {(started ? "compressed" : "uncompressed")} from {GetPeerName(peer)}");
         }
 
-        public static bool ShouldCompressSend(ISocket socket) =>
-            _peerStatus.TryGetValue(socket, out var status) && status.SendingCompressed && _compressor != null;
-
-        public static bool ShouldCompressReceive(ISocket socket) =>
-            _peerStatus.TryGetValue(socket, out var status) && status.ReceivingCompressed && _compressor != null;
-
         public static byte[] Compress(byte[] data) => _compressor?.Compress(data) ?? data;
-        public static byte[] Decompress(byte[] data) => _compressor?.Decompress(data) ?? data;
-
+        
         private static string GetPeerName(ZNetPeer peer)
         {
             try
@@ -380,14 +432,8 @@
                     continue;
                 }
 
-                if (ImportantPrefabs.Contains(prefab) && distance < ImportantObjectDistance)
-                {
-                    zdo.m_tempSortValue -= 150f;
-                }
-                else
-                {
-                    zdo.m_tempSortValue += distance;
-                }
+                if (ImportantPrefabs.Contains(prefab) && distance < ImportantObjectDistance) zdo.m_tempSortValue -= 150f;
+                else zdo.m_tempSortValue += distance;
             }
         }
 
@@ -400,7 +446,6 @@
                 PerformanceMonitor.Track("RemoveObjects", () =>
                 {
                     if (currentNearObjects == null || currentDistantObjects == null) return;
-
                     OptimizedRemoveObjects(__instance, currentNearObjects, currentDistantObjects);
                 });
                 return false;
