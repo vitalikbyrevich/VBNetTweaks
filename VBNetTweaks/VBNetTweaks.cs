@@ -1,10 +1,4 @@
-﻿using System.Collections;
-using Jotunn.Entities;
-using Jotunn.Managers;
-using Jotunn.Utils;
-using Paths = BepInEx.Paths;
-
-namespace VBNetTweaks
+﻿namespace VBNetTweaks
 {
     [BepInPlugin(ModGUID, ModName, ModVersion)]
     [BepInIncompatibility("CacoFFF.valheim.LeanNet")]
@@ -16,7 +10,7 @@ namespace VBNetTweaks
     public class VBNetTweaks : BaseUnityPlugin
     {
         private const string ModName = "VBNetTweaks";
-        private const string ModVersion = "0.2.0";
+        private const string ModVersion = "0.2.1";
         private const string ModGUID = "VitByr.VBNetTweaks";
 
         private CustomRPC _configSyncRPC;

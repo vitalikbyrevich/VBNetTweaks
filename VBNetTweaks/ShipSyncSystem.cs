@@ -11,7 +11,7 @@
             public float t;
             public bool ok;
         }
-
+        
         private class PlayerShipState
         {
             public Ship ship;
@@ -19,7 +19,12 @@
             public Quaternion localRot;
             public float lastUpdate;
             public bool isAttached;
+
+            public Vector3 localAttachPos;
+            public Quaternion localAttachRot;
+            public string attachPointName;
         }
+
 
         private static readonly Dictionary<long, ShipData> _shipData = new();
         private static readonly Dictionary<long, PlayerShipState> _playerStates = new();
@@ -72,16 +77,22 @@
 
             PlayerCache.UpdatePlayerState(playerId, attached, shipId);
 
+            Ship ship = null;
+            Transform attachPoint = null;
+
             if (attached)
             {
                 GameObject shipView = ZNetScene.instance.FindInstance(shipId);
                 if (!shipView) return;
 
-                Ship ship = shipView.GetComponent<Ship>();
+                ship = shipView.GetComponent<Ship>();
                 if (!ship) return;
 
-                Transform attachPoint = FindAttachPoint(ship, attachPointName);
-                if (attachPoint && !player.IsAttached())
+                attachPoint = FindAttachPoint(ship, attachPointName);
+                if (!attachPoint) return;
+
+                // ванильное прикрепление оставляем
+                if (!player.IsAttached())
                 {
                     player.AttachStart(attachPoint, null, false, false, true, "attach_chair", Vector3.zero);
                 }
@@ -90,7 +101,27 @@
             {
                 if (player.IsAttached()) player.AttachStop();
             }
+
+            long uid = playerId;
+            if (!_playerStates.TryGetValue(uid, out var st))
+            {
+                st = new PlayerShipState();
+                _playerStates[uid] = st;
+            }
+
+            st.ship = ship;
+            st.isAttached = attached;
+            st.attachPointName = attachPointName;
+
+            if (ship && attachPoint)
+            {
+                st.localAttachPos = ship.transform.InverseTransformPoint(attachPoint.position);
+                st.localAttachRot = Quaternion.Inverse(ship.transform.rotation) * attachPoint.rotation;
+            }
+
+            st.lastUpdate = Time.time;
         }
+
         
         public static void CleanupPeer(long uid)
         {
@@ -283,71 +314,51 @@
 
         [HarmonyPatch(typeof(Player), nameof(Player.LateUpdate))]
         [HarmonyPostfix]
-        public static void ApplyShipCompensation(Player __instance)
+        public static void LateUpdate_PlayerSync(Player __instance)
         {
+            // локальный игрок — не трогаем
             if (__instance == Player.m_localPlayer) return;
 
             long uid = __instance.GetPlayerID();
-            if (!_playerStates.TryGetValue(uid, out var st)) return;
-            if (!st.ship) return;
 
-          /*  bool shouldBeAttached = st.isAttached;
+            if (!_playerStates.TryGetValue(uid, out var st) || !st.ship) return;
 
-            if (shouldBeAttached)
+            // если игрок закреплён — используем attachPoint prediction
+            if (st.isAttached)
             {
-                var attachPoint = __instance.GetAttachPoint();
+                var zdo = st.ship.m_nview?.GetZDO();
+                if (zdo == null) return;
 
-                if (!attachPoint)
-                {
-                    VBNetTweaks.LogDebug($"Player {uid} should be attached but isn't");
+                long owner = zdo.GetOwner();
+                if (!_shipData.TryGetValue(owner, out var d) || !d.ok) return;
 
-                    return;
-                }
+                // предсказанная позиция корабля
+                Vector3 predictedShipPos = d.pos + d.vel * Time.deltaTime;
+                Quaternion predictedShipRot = d.rot;
 
-                Ship parentShip = attachPoint.GetComponentInParent<Ship>();
-                if (parentShip != st.ship)
-                {
-                    VBNetTweaks.LogDebug($"Player {uid} attached to wrong ship");
-                }
+                // предсказанный attachPoint
+                Vector3 predictedAttachPos = predictedShipPos + predictedShipRot * st.localAttachPos;
+                Quaternion predictedAttachRot = predictedShipRot * st.localAttachRot;
+
+                float lerpSpeed = 15f;
+
+                __instance.transform.position = Vector3.Lerp(__instance.transform.position, predictedAttachPos, Time.deltaTime * lerpSpeed);
+
+                __instance.transform.rotation = Quaternion.Slerp(__instance.transform.rotation, predictedAttachRot, Time.deltaTime * lerpSpeed);
+
                 return;
-            }*/
+            }
 
-            float lerpSpeed = 15f;
+            // если игрок НЕ закреплён, но стоит на корабле — обычная компенсация
+            float speed = 15f;
+
             Vector3 targetPos = st.ship.transform.TransformPoint(st.localPos);
             Quaternion targetRot = st.ship.transform.rotation * st.localRot;
 
-            __instance.transform.position = Vector3.Lerp(__instance.transform.position, targetPos, Time.deltaTime * lerpSpeed);
-            __instance.transform.rotation = Quaternion.Slerp(__instance.transform.rotation, targetRot, Time.deltaTime * lerpSpeed);
+            __instance.transform.position = Vector3.Lerp(__instance.transform.position, targetPos, Time.deltaTime * speed);
+
+            __instance.transform.rotation = Quaternion.Slerp(__instance.transform.rotation, targetRot, Time.deltaTime * speed);
         }
 
-     /*   [HarmonyPatch(typeof(Chair), nameof(Chair.Interact))]
-        [HarmonyPostfix]
-        public static void AfterChairInteract(Chair __instance, Humanoid human, bool hold, bool alt)
-        {
-            if (hold) return;
-            if (human != Player.m_localPlayer) return;
-
-            TrackLocalPlayer(Player.m_localPlayer);
-        }
-
-        [HarmonyPatch(typeof(ShipControlls), nameof(ShipControlls.RPC_RequestRespons))]
-        [HarmonyPostfix]
-        public static void AfterControlGranted(ShipControlls __instance, long sender, bool granted)
-        {
-            if (!granted) return;
-            if (!Player.m_localPlayer) return;
-            if (sender != ZNet.GetUID()) return;
-
-            TrackLocalPlayer(Player.m_localPlayer);
-        }
-
-        [HarmonyPatch(typeof(ShipControlls), nameof(ShipControlls.OnUseStop))]
-        [HarmonyPostfix]
-        public static void AfterControlReleased(ShipControlls __instance, Player player)
-        {
-            if (player != Player.m_localPlayer) return;
-
-            TrackLocalPlayer(Player.m_localPlayer);
-        }*/
     }
 }

@@ -15,3 +15,8 @@ global using CompressionLevel = UnityEngine.CompressionLevel;
 global using VBNetTweaks.Utils;
 global using System.Diagnostics;
 global using Debug = UnityEngine.Debug;
+global using System.Collections;
+global using Jotunn.Entities;
+global using Jotunn.Managers;
+global using Jotunn.Utils;
+global using Paths = BepInEx.Paths;
