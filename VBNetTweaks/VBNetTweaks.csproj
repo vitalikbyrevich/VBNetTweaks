@@ -36,13 +36,21 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="AdaptiveThrottler.cs" />
+    <Compile Include="CompressionUtills\CompressionAlgorithm.cs" />
+    <Compile Include="CompressionUtills\CompressionController.cs" />
+    <Compile Include="CompressionUtills\DeflateCompressor.cs" />
+    <Compile Include="CompressionUtills\ICompressor.cs" />
+    <Compile Include="CompressionUtills\ZstdCompressor.cs" />
+    <Compile Include="Core\ModConfig.cs" />
     <Compile Include="PlayerCache.cs" />
     <Compile Include="PlayerSyncSystem.cs" />
     <Compile Include="RpcBatcher.cs" />
     <Compile Include="ShipSyncSystem.cs" />
     <Compile Include="SupportManager.cs" />
-    <Compile Include="Utils\CompressionAlgorithm.cs" />
-    <Compile Include="Utils\ICompressor.cs" />
+    <Compile Include="ZDOUtills\ZDONetworkOptimizer.cs" />
+    <Compile Include="ZDOUtills\ZDORemoval.cs" />
+    <Compile Include="ZDOUtills\ZDOSorting.cs" />
+    <Compile Include="ZDOUtills\ZDOThrottling.cs" />
     <Compile Include="ZoneOwnerManager.cs" />
     <None Include="0\BufferPool.cs" />
     <None Include="0\ListPool.cs" />
@@ -52,7 +60,6 @@
     <Compile Include="Utils\PerformanceMonitor.cs" />
     <Compile Include="Utils\RpcSerializer.cs" />
     <Compile Include="Utils\ZNetOptimizations.cs" />
-    <Compile Include="ZDONetworkOptimizer.cs" />
     <None Include="0\ZDOCompressionOptimizer.cs" />
     <None Include="0\AdaptiveOptimizationManager.cs" />
     <None Include="0\DynamicZDOThrottler.cs" />

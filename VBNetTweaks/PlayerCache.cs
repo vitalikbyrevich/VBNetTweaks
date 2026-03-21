@@ -70,7 +70,7 @@
                 }
             }
             
-            if (VBNetTweaks.DebugEnabled.Value && VBNetTweaks.VerboseLogging.Value) VBNetTweaks.LogVerbose($"PlayerCache refreshed: {_cachedPlayers.Count} players");
+            if (ModConfig.DebugEnabled.Value && ModConfig.VerboseLogging.Value) Helper.LogVerbose($"PlayerCache refreshed: {_cachedPlayers.Count} players");
         }
 
         public static void Invalidate()

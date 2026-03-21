@@ -15,7 +15,7 @@ public static class PerformanceMonitor
 
     public static void Track(string name, Action action)
     {
-        if (!VBNetTweaks.DebugEnabled.Value)
+        if (!ModConfig.DebugEnabled.Value)
         {
             action();
             return;
@@ -34,7 +34,7 @@ public static class PerformanceMonitor
         if (now - sample.LastLogTime > LOG_INTERVAL)
         {
             float avg = sample.TotalTime / sample.Count;
-            VBNetTweaks.LogDebug($"{name}: avg={avg:F2}ms over {sample.Count} samples");
+            Helper.LogDebug($"{name}: avg={avg:F2}ms over {sample.Count} samples");
             
             sample.TotalTime = 0;
             sample.Count = 0;

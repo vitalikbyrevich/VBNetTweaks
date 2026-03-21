@@ -39,4 +39,22 @@ public static class Helper
         
         return zdo.IsOwner();
     }
+
+    public static void LogDebug(string message)
+    {
+        if (ModConfig.DebugEnabled.Value) Debug.LogWarning($"[VBNetTweaks] {message}");
+    }
+
+    public static void LogVerbose(string message)
+    {
+        if (ModConfig.VerboseLogging.Value) Debug.Log($"[VBNetTweaks] {message}");
+    }
+
+    public static float GetEffectiveSendInterval()
+    {
+        float cfg = (!ModConfig._serverConfigsInitialized) ? 0.05f : (ModConfig.SendInterval?.Value ?? 0.05f);
+        return AdaptiveThrottler.GetInterval(cfg);
+    }
+
+    public static int GetPeersPerUpdate() => (!ModConfig._serverConfigsInitialized) ? 20 : (ModConfig.PeersPerUpdate?.Value ?? 20);
 }

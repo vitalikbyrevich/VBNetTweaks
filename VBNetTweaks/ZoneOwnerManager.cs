@@ -7,9 +7,12 @@
             public long OwnerPeerId;
             public float LastTransferTime;
             public int LastKnownPing = -1;
+            public Vector2i ZoneId;
         }
 
         private static readonly Dictionary<Vector2i, ZoneOwnerInfo> _owners = new();
+        private static readonly Dictionary<long, List<Vector2i>> _playerZones = new();
+        private static readonly object _lock = new object();
 
         public static ConfigEntry<bool> Enabled { get; set; }
         public static ConfigEntry<int> PingThreshold { get; set; }
@@ -18,22 +21,49 @@
         public static ConfigEntry<float> OwnerUpdateInterval { get; set; }
 
         private static float _lastOwnerUpdateTime;
+        private static bool _isInitialized;
 
         public static void Initialize()
         {
-            if (!ZNet.instance?.IsServer() ?? true) return;
+          //  if (!ZNet.instance?.IsServer() ?? true) return;
 
-            if (Enabled != null && !Enabled.Value)
+            lock (_lock)
             {
-                ZLog.Log("[ZoneOwnerManager] Disabled via config");
-                return;
-            }
+                if (_isInitialized) return;
 
-            ZLog.Log("[ZoneOwnerManager] Initialized with config: " +
-                     $"PingThreshold={PingThreshold?.Value ?? 150}ms, " +
-                     $"Hysteresis={Hysteresis?.Value ?? 20}ms, " +
-                     $"TransferCooldown={TransferCooldown?.Value ?? 5f}s, " +
-                     $"OwnerUpdateInterval={OwnerUpdateInterval?.Value ?? 2f}s");
+                if (Enabled == null)
+                {
+                    ZLog.LogWarning("[ZoneOwnerManager] Config not initialized, using defaults");
+                    return;
+                }
+
+                if (!Enabled.Value)
+                {
+                    ZLog.Log("[ZoneOwnerManager] Disabled via config");
+                    return;
+                }
+
+                _owners.Clear();
+                _playerZones.Clear();
+
+                ZLog.Log($"[ZoneOwnerManager] Initialized with config: " +
+                         $"PingThreshold={PingThreshold?.Value ?? 150}ms, " +
+                         $"Hysteresis={Hysteresis?.Value ?? 20}ms, " +
+                         $"TransferCooldown={TransferCooldown?.Value ?? 5f}s, " +
+                         $"OwnerUpdateInterval={OwnerUpdateInterval?.Value ?? 2f}s");
+
+                _isInitialized = true;
+            }
+        }
+
+        public static void Shutdown()
+        {
+            lock (_lock)
+            {
+                _owners.Clear();
+                _playerZones.Clear();
+                _isInitialized = false;
+            }
         }
 
         private static int GetPlayerPing(long peerUid)
@@ -43,28 +73,42 @@
 
         public static void RemovePlayer(long peerUid)
         {
+            if (!_isInitialized) return;
+
+            lock (_lock)
+            {
+                if (!_playerZones.TryGetValue(peerUid, out var zones)) return;
+
+                ZLog.Log($"[ZoneOwnerManager] Player {peerUid} left, clearing {zones.Count} zones");
+
+                foreach (var zone in zones)
+                {
+                    _owners.Remove(zone);
+                }
+
+                _playerZones.Remove(peerUid);
+            }
         }
 
         public static void UpdateZoneOwnership(Vector2i zone)
         {
-            if (Enabled != null && !Enabled.Value) return;
-
-            if (!ZNet.instance?.IsServer() ?? true)
-                return;
-
-            var players = GetPlayersInZone(zone);
-            if (players.Count == 0) return;
+            if (!_isInitialized) return;
 
             if (!_owners.TryGetValue(zone, out var info))
             {
-                SetZoneOwner(zone, players[0], null);
+                AssignInitialOwner(zone);
                 return;
             }
 
             var ownerPeer = GetPeerById(info.OwnerPeerId);
-            if (ownerPeer == null)
+            if (ownerPeer == null || !ownerPeer.IsReady())
             {
-                SetZoneOwner(zone, players[0], info);
+                lock (_lock)
+                {
+                    _owners.Remove(zone);
+                    _playerZones[info.OwnerPeerId]?.Remove(zone);
+                }
+                AssignInitialOwner(zone);
                 return;
             }
 
@@ -79,6 +123,17 @@
 
             int pingThreshold = PingThreshold?.Value ?? 150;
             if (ownerPing <= pingThreshold) return;
+
+            var players = GetPlayersInZone(zone);
+            if (players.Count == 0)
+            {
+                lock (_lock)
+                {
+                    _owners.Remove(zone);
+                    _playerZones[info.OwnerPeerId]?.Remove(zone);
+                }
+                return;
+            }
 
             var bestCandidate = FindBestCandidate(players, info.OwnerPeerId);
             if (bestCandidate == null) return;
@@ -95,29 +150,40 @@
             TransferZoneOwnership(zone, ownerPeer, bestCandidate, ownerPing, bestPing, info);
         }
 
-        private static void SetZoneOwner(Vector2i zone, ZNetPeer newOwner, ZoneOwnerInfo existingInfo)
+        private static void AssignInitialOwner(Vector2i zone)
         {
-            int ping = GetPlayerPing(newOwner.m_uid);
+            var players = GetPlayersInZone(zone);
+            if (players.Count == 0) return;
 
-            if (existingInfo != null)
+            var bestCandidate = FindBestCandidate(players, 0);
+            if (bestCandidate == null) return;
+
+            int ping = GetPlayerPing(bestCandidate.m_uid);
+            if (ping <= 0) return;
+
+            lock (_lock)
             {
-                existingInfo.OwnerPeerId = newOwner.m_uid;
-                existingInfo.LastTransferTime = Time.time;
-                existingInfo.LastKnownPing = ping;
-            }
-            else
-            {
-                _owners[zone] = new ZoneOwnerInfo
+                var info = new ZoneOwnerInfo
                 {
-                    OwnerPeerId = newOwner.m_uid,
+                    OwnerPeerId = bestCandidate.m_uid,
                     LastTransferTime = Time.time,
-                    LastKnownPing = ping
+                    LastKnownPing = ping,
+                    ZoneId = zone
                 };
-            }
 
-            if (VBNetTweaks.DebugEnabled.Value)
-            {
-                ZLog.Log($"[ZoneOwnerManager] Initial owner for zone {zone}: {GetPeerName(newOwner)} (ping: {ping}ms)");
+                _owners[zone] = info;
+
+                if (!_playerZones.TryGetValue(bestCandidate.m_uid, out var zones))
+                {
+                    zones = new List<Vector2i>();
+                    _playerZones[bestCandidate.m_uid] = zones;
+                }
+                zones.Add(zone);
+
+                if (ModConfig.DebugEnabled.Value)
+                {
+                    ZLog.Log($"[ZoneOwnerManager] Initial owner for zone {zone}: {GetPeerName(bestCandidate)} (ping: {ping}ms)");
+                }
             }
         }
 
@@ -125,19 +191,34 @@
         {
             ZLog.Log($"[ZoneOwnerManager] Transfer zone {zone} from {GetPeerName(oldOwner)}({oldPing}ms) → {GetPeerName(newOwner)}({newPing}ms)");
 
-            info.OwnerPeerId = newOwner.m_uid;
-            info.LastTransferTime = Time.time;
-            info.LastKnownPing = newPing;
+            lock (_lock)
+            {
+                if (_playerZones.TryGetValue(oldOwner.m_uid, out var oldZones))
+                {
+                    oldZones.Remove(zone);
+                }
+
+                info.OwnerPeerId = newOwner.m_uid;
+                info.LastTransferTime = Time.time;
+                info.LastKnownPing = newPing;
+
+                if (!_playerZones.TryGetValue(newOwner.m_uid, out var newZones))
+                {
+                    newZones = new List<Vector2i>();
+                    _playerZones[newOwner.m_uid] = newZones;
+                }
+                newZones.Add(zone);
+            }
         }
 
         private static List<ZNetPeer> GetPlayersInZone(Vector2i zone)
         {
-            var list = new List<ZNetPeer>();
+            var list = ObjectPool.RentList<ZNetPeer>();
             var peers = ZNet.instance.GetPeers();
 
             foreach (var peer in peers)
             {
-                if (peer?.m_socket == null) continue;
+                if (peer?.m_socket == null || !peer.IsReady()) continue;
 
                 Vector2i pZone = ZoneSystem.GetZone(peer.GetRefPos());
                 if (pZone == zone) list.Add(peer);
@@ -151,7 +232,7 @@
             var peers = ZNet.instance.GetPeers();
             foreach (var peer in peers)
             {
-                if (peer?.m_uid == peerId) return peer;
+                if (peer?.m_uid == peerId && peer.IsReady()) return peer;
             }
 
             return null;
@@ -197,64 +278,87 @@
             return null;
         }
 
-
         [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Update))]
         [HarmonyPostfix]
-        static void Postfix()
+        static void ZoneSystemUpdatePostfix()
         {
-            if (!ZNet.instance?.IsServer() ?? true) return;
+           // if (!ZNet.instance?.IsServer() ?? true) return;
 
-            if (ZoneOwnerManager.Enabled != null && !ZoneOwnerManager.Enabled.Value) return;
+            if (Enabled == null || !Enabled.Value) return;
 
-            if (Time.time - ZoneOwnerManager.LastOwnerUpdateTime < ZoneOwnerManager.GetOwnerUpdateInterval()) return;
+            if (!_isInitialized)
+            {
+                Initialize();
+                return;
+            }
 
-            ZoneOwnerManager.LastOwnerUpdateTime = Time.time;
+            if (Time.time - _lastOwnerUpdateTime < GetOwnerUpdateInterval()) return;
+
+            _lastOwnerUpdateTime = Time.time;
 
             var zones = ZoneSystem.instance?.m_zones;
             if (zones == null) return;
 
-            foreach (var kvp in zones)
+            var activeZones = ObjectPool.RentList<Vector2i>();
+            try
             {
-                ZoneOwnerManager.UpdateZoneOwnership(kvp.Key);
+                foreach (var kvp in zones)
+                {
+                    activeZones.Add(kvp.Key);
+                }
+
+                foreach (var zone in activeZones)
+                {
+                    UpdateZoneOwnership(zone);
+                }
+            }
+            finally
+            {
+                ObjectPool.ReturnList(activeZones);
             }
         }
 
         [HarmonyPatch(typeof(ZNet), nameof(ZNet.OnNewConnection))]
         [HarmonyPostfix]
-        static void Postfix(ZNet __instance, ZNetPeer peer)
+        static void ZNetOnNewConnectionPostfix(ZNet __instance, ZNetPeer peer)
         {
-            if (!ZNet.instance?.IsServer() ?? true) return;
+          //  if (!ZNet.instance?.IsServer() ?? true) return;
 
-            ZoneOwnerManager.Initialize();
+            if (ModConfig.DebugEnabled.Value)
+            {
+                ZLog.Log($"[ZoneOwnerManager] New connection from {GetPeerName(peer)}");
+            }
         }
 
         [HarmonyPatch(typeof(ZNet), nameof(ZNet.RPC_CharacterID))]
         [HarmonyPostfix]
-        static void Postfix(ZNet __instance, ZRpc rpc, ZDOID characterID)
+        static void ZNetRPCCharacterIDPostfix(ZNet __instance, ZRpc rpc, ZDOID characterID)
         {
+           // if (!ZNet.instance?.IsServer() ?? true) return;
+            if (Enabled == null || !Enabled.Value) return;
+
             try
             {
-                if (!ZNet.instance?.IsServer() ?? true) return;
-
                 var peer = GetPeerByRpc(rpc);
-                if (peer != null)
+                if (peer != null && ModConfig.DebugEnabled.Value)
                 {
-                    ZLog.Log($"[ZoneOwnerManager] Player {GetPeerName(peer)} joined world");
+                    ZLog.Log($"[ZoneOwnerManager] Player {GetPeerName(peer)} joined world with character {characterID}");
                 }
             }
             catch
             {
+                // Игнорируем ошибки
             }
         }
 
-
         [HarmonyPatch(typeof(ZNet), nameof(ZNet.Disconnect))]
         [HarmonyPrefix]
-        static void Prefix(ZNet __instance, ZNetPeer peer)
+        static void ZNetDisconnectPrefix(ZNet __instance, ZNetPeer peer)
         {
-            if (!ZNet.instance?.IsServer() ?? true) return;
+          //  if (!ZNet.instance?.IsServer() ?? true) return;
+            if (Enabled == null || !Enabled.Value) return;
 
-            ZoneOwnerManager.RemovePlayer(peer?.m_uid ?? 0);
+            RemovePlayer(peer?.m_uid ?? 0);
         }
     }
 }

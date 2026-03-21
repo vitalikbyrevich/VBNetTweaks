@@ -5,127 +5,102 @@
         private static float _lastEvalTime;
         private static float _currentInterval = 0.05f; // старт по умолчанию
 
-        private const float LowPingThreshold = 0.15f; // < 150 мс — можно ускоряться
-        private const float HighPingThreshold = 0.60f; // > 600 мс — надо замедляться
-        private const float MinInterval = 0.03f; // минимум
-        private const float MaxInterval = 0.10f; // максимум
+        private const float LowPingThresholdSec  = 0.15f; // < 150 мс — можно ускоряться
+        private const float HighPingThresholdSec = 0.60f; // > 600 мс — надо замедляться
+
+        private const float MinInterval = 0.03f;
+        private const float MaxInterval = 0.10f;
         private const float EvalInterval = 1.0f; // раз в секунду пересчитываем
-
-        private class PeerStats
-        {
-            public float lastPing;
-            public float lastPingTime;
-            public int missedPings;
-        }
-
-        private static readonly Dictionary<ZNetPeer, PeerStats> _peerStats = new();
 
         public static void Update(ZNet znet, float dt)
         {
-            if (!znet || !Helper.IsServer()) return;
+            if (!znet/* || !Helper.IsServer()*/) return;
 
             _lastEvalTime += dt;
             if (_lastEvalTime < EvalInterval) return;
+
             _lastEvalTime = 0f;
 
             List<ZNetPeer> peers = znet.m_peers;
             if (peers == null || peers.Count == 0)
             {
-                _currentInterval = VBNetTweaks.SendInterval?.Value ?? 0.05f;
+                _currentInterval = ModConfig.SendInterval?.Value ?? 0.05f;
                 return;
             }
 
-            float now = Time.time;
-            float maxReliablePing = 0f;
-            float packetLoss = 0f;
+            float maxPingSec = 0f;
             int activePeers = 0;
 
             for (int i = 0; i < peers.Count; i++)
             {
-                var p = peers[i];
-                if (p?.m_rpc == null) continue;
+                var peer = peers[i];
+                if (peer == null) continue;
 
-                if (!_peerStats.TryGetValue(p, out var stats))
-                {
-                    stats = new PeerStats();
-                    _peerStats[p] = stats;
-                }
+                var socket = peer.m_socket as ZSteamSocket;
+                if (socket == null || !socket.IsConnected())
+                    continue;
 
-                float ping = p.m_rpc.GetTimeSinceLastPing();
+                socket.GetConnectionQuality(out _, out _, out int pingMs, out _, out _);
 
-                if (ping < 10f) 
-                {
-                    if (ping > stats.lastPing * 2f) stats.missedPings++;
-                    else stats.missedPings = Mathf.Max(0, stats.missedPings - 1);
+                if (pingMs <= 0) continue;
 
-                    stats.lastPing = ping;
-                    stats.lastPingTime = now;
-                    activePeers++;
-                }
-                else if (now - stats.lastPingTime > 5f) stats.missedPings += 2;
+                float pingSec = pingMs / 1000f;
+                if (pingSec > maxPingSec) maxPingSec = pingSec;
 
-                if (now - stats.lastPingTime < 3f)
-                {
-                    if (ping > maxReliablePing) maxReliablePing = ping;
-                    packetLoss += stats.missedPings;
-                }
+                activePeers++;
             }
 
             if (activePeers == 0)
             {
-                _currentInterval = VBNetTweaks.SendInterval?.Value ?? 0.05f;
+                _currentInterval = ModConfig.SendInterval?.Value ?? 0.05f;
                 return;
             }
 
-            packetLoss /= activePeers;
-
-            float baseInterval = VBNetTweaks.SendInterval?.Value ?? 0.05f;
+            float baseInterval = ModConfig.SendInterval?.Value ?? 0.05f;
             float newInterval = baseInterval;
 
-            if (maxReliablePing < LowPingThreshold) newInterval = Mathf.Max(MinInterval, baseInterval * 0.7f);
-            else if (maxReliablePing > HighPingThreshold) newInterval = Mathf.Min(MaxInterval, baseInterval * 1.5f);
-
-            if (packetLoss > 2f) newInterval = Mathf.Min(MaxInterval, newInterval * 1.3f);
-            else if (packetLoss < 0.5f && maxReliablePing < HighPingThreshold) newInterval = Mathf.Max(MinInterval, newInterval * 0.9f);
-
-            _currentInterval = newInterval;
-
-            if (VBNetTweaks.DebugEnabled.Value)
+            if (maxPingSec < LowPingThresholdSec)
             {
-                VBNetTweaks.LogDebug($"AdaptiveThrottler: ping={maxReliablePing:0.000}s loss={packetLoss:F1} " + $"base={baseInterval:0.000}s -> interval={_currentInterval:0.000}s");
+                newInterval = Mathf.Max(MinInterval, baseInterval * 0.7f);
+            }
+            else if (maxPingSec > HighPingThresholdSec)
+            {
+                newInterval = Mathf.Min(MaxInterval, baseInterval * 1.5f);
+            }
+
+            _currentInterval = Mathf.Clamp(newInterval, MinInterval, MaxInterval);
+
+            if (ModConfig.DebugEnabled.Value)
+            {
+                Helper.LogDebug($"AdaptiveThrottler: peers={activePeers} maxPing={maxPingSec:0.000}s " + $"base={baseInterval:0.000}s -> interval={_currentInterval:0.000}s");
             }
         }
-        
+
         public static int GetPlayerPingMs(long peerUid)
         {
             var peer = GetPeerByUid(peerUid);
-            if (peer == null) return -1;
+            if (peer == null)
+                return -1;
 
-            if (_peerStats.TryGetValue(peer, out var stats))
-            {
-                if (Time.time - stats.lastPingTime < 3f) return (int)(stats.lastPing * 1000f);
-            }
-        
-            float pingSec = peer.m_rpc.GetTimeSinceLastPing();
-            if (pingSec < 10f) return (int)(pingSec * 1000f);
-        
-            return -1;
+            var socket = peer.m_socket as ZSteamSocket;
+            if (socket == null || !socket.IsConnected()) return -1;
+
+            socket.GetConnectionQuality(out _, out _, out int pingMs, out _, out _);
+            return pingMs > 0 ? pingMs : -1;
         }
 
         private static ZNetPeer GetPeerByUid(long uid)
         {
             var peers = ZNet.instance?.GetPeers();
             if (peers == null) return null;
-        
+
             foreach (var peer in peers)
             {
                 if (peer?.m_uid == uid) return peer;
             }
+
             return null;
         }
-
-        public static void OnPeerDisconnected(ZNetPeer peer) => _peerStats.Remove(peer);
-
         public static float GetInterval(float fallback) => _currentInterval > 0f ? _currentInterval : fallback;
     }
 }

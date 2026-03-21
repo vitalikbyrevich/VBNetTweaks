@@ -86,14 +86,14 @@
 
             if (isAttached || isOnShip) return;
 
-            if (VBNetTweaks.EnablePlayerPrediction.Value)
+            if (ModConfig.EnablePlayerPrediction.Value)
             {
                 float predictTime = Time.deltaTime * 1.5f;
                 Vector3 predicted = d.pos + d.vel * predictTime;
                 __instance.transform.position = Vector3.Lerp(__instance.transform.position, predicted, 0.8f);
             }
 
-            if (VBNetTweaks.EnableClientInterpolation.Value)
+            if (ModConfig.EnableClientInterpolation.Value)
             {
                 float t = Mathf.Clamp01(Time.deltaTime * 12f);
                 Vector3 target = d.pos + d.vel * Time.deltaTime * 0.5f;
@@ -111,7 +111,6 @@
 
             long uid = peer.m_uid;
             CleanupPeer(uid);
-            AdaptiveThrottler.OnPeerDisconnected(peer);
         }
     }
 }

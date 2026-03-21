@@ -3,9 +3,6 @@
     [HarmonyPatch]
     public static class MonsterAiPatches
     {
-        // ============================================================
-        // 1. ОТКЛЮЧАЕМ ПАУЗУ ЭВЕНТОВ
-        // ============================================================
         [HarmonyPatch(typeof(RandEventSystem), nameof(RandEventSystem.FixedUpdate))]
         [HarmonyTranspiler]
         static IEnumerable<CodeInstruction> DisableEventPause(IEnumerable<CodeInstruction> instructions)
@@ -18,36 +15,29 @@
 
             if (m.IsInvalid)
             {
-                VBNetTweaks.LogDebug("IsAnyPlayerInEventArea not found, skipping patch");
+                Helper.LogDebug("IsAnyPlayerInEventArea not found, skipping patch");
                 return instructions;
             }
 
-            // Просто заменяем вызов на true
             m.SetInstruction(new CodeInstruction(OpCodes.Ldc_I4_1));
             
             return m.InstructionEnumeration();
         }
 
-        // ============================================================
-        // 2. ОПТИМИЗИРУЕМ СПАВН - Упрощенная версия без сложных манипуляций
-        // ============================================================
         [HarmonyPatch(typeof(SpawnSystem), nameof(SpawnSystem.UpdateSpawning))]
         [HarmonyPrefix]
         static bool SpawnSystem_UpdateSpawning_Prefix(SpawnSystem __instance)
         {
-            if (!VBNetTweaks.ModuleMonsterAI.Value)
+            if (!ModConfig.ModuleMonsterAI.Value)
                 return true;
                 
-            // Получаем всех игроков
             var allPlayers = Player.GetAllPlayers();
             
-            // Проверяем, есть ли игроки поблизости
             if (!HasAnyPlayerNearby(allPlayers))
             {
-                return false; // Не спавним, если нет игроков
+                return false;
             }
             
-            // Разрешаем оригинальному методу работать
             return true;
         }
 
@@ -64,26 +54,21 @@
                 if (!p) continue;
                 
                 var pZone = ZoneSystem.GetZone(p.transform.position);
-                if (!ZNetScene.OutsideActiveArea(p.transform.position, pZone, activeArea)) 
-                    return true;
+                if (!ZNetScene.OutsideActiveArea(p.transform.position, pZone, activeArea)) return true;
             }
             return false;
         }
 
-        // ============================================================
-        // 3. МУЛЬТИ-ЭВЕНТЫ
-        // ============================================================
         private static readonly List<ActiveEvent> _events = new();
 
         [HarmonyPatch(typeof(RandEventSystem), nameof(RandEventSystem.SetRandomEvent))]
         [HarmonyPrefix]
         static bool MultiEvent_Start(RandEventSystem __instance, RandomEvent ev, Vector3 pos)
         {
-            if (!VBNetTweaks.ModuleMonsterAI.Value)
+            if (!ModConfig.ModuleMonsterAI.Value)
                 return true;
                 
-            if (ev == null) 
-                return false;
+            if (ev == null) return false;
 
             var clone = ev.Clone();
             clone.m_pos = pos;
@@ -91,8 +76,7 @@
 
             _events.Add(new ActiveEvent(clone));
             
-            if (VBNetTweaks.DebugEnabled.Value)
-                VBNetTweaks.LogDebug($"MultiEvent started: {ev.m_name} at {pos}");
+            if (ModConfig.DebugEnabled.Value) Helper.LogDebug($"MultiEvent started: {ev.m_name} at {pos}");
 
             return false;
         }
@@ -101,7 +85,7 @@
         [HarmonyPostfix]
         static void MultiEvent_Update()
         {
-            if (!VBNetTweaks.ModuleMonsterAI.Value)
+            if (!ModConfig.ModuleMonsterAI.Value)
                 return;
                 
             float dt = Time.fixedDeltaTime;
@@ -110,8 +94,7 @@
             {
                 if (!_events[i].Update(dt))
                 {
-                    if (VBNetTweaks.DebugEnabled.Value)
-                        VBNetTweaks.LogDebug($"MultiEvent finished: {_events[i].GetName()}");
+                    if (ModConfig.DebugEnabled.Value) Helper.LogDebug($"MultiEvent finished: {_events[i].GetName()}");
                     _events.RemoveAt(i);
                 }
             }

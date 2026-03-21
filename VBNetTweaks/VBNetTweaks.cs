@@ -10,82 +10,45 @@
     public class VBNetTweaks : BaseUnityPlugin
     {
         private const string ModName = "VBNetTweaks";
-        private const string ModVersion = "0.2.1";
+        private const string ModVersion = "0.2.2";
         private const string ModGUID = "VitByr.VBNetTweaks";
 
         private CustomRPC _configSyncRPC;
         private ConfigFile _serverConfig;
 
-        public static ConfigEntry<bool> ModEnabled;
-
-        public static ConfigEntry<bool> DebugEnabled;
-        public static ConfigEntry<bool> VerboseLogging;
-        public static ConfigEntry<bool> SceneDebugEnabled;
-
-        public static ConfigEntry<bool> ModuleCompression;
-        public static ConfigEntry<bool> EnableClientCompression;
-        public static ConfigEntry<bool> ModuleZDOThrottling;
-        public static ConfigEntry<bool> ModuleAILOD;
-        public static ConfigEntry<bool> ModuleMonsterAI;
-        public static ConfigEntry<bool> ModuleSteamOptimizations;
-        public static ConfigEntry<bool> ModulePlayerSync;
-        public static ConfigEntry<bool> ModuleShipSync;
-        public static ConfigEntry<bool> ModuleZoneOwner;
-        public static ConfigEntry<bool> ModuleSupportCache;
-        public static ConfigEntry<bool> ModuleRpcBatcher;
-
-        public static ConfigEntry<CompressionAlgorithm> m_CompressionAlgorithm;
-        public static ConfigEntry<int> CompressionLevel;
-        public static ConfigEntry<float> ZDOThrottleDistance;
-        public static ConfigEntry<float> AILODNearDistance;
-        public static ConfigEntry<float> AILODFarDistance;
-        public static ConfigEntry<float> AILODThrottleFactor;
-        public static ConfigEntry<int> SteamSendRateMinKB;
-        public static ConfigEntry<int> SteamSendRateMaxKB;
-        public static ConfigEntry<int> SteamSendBufferSize;
-        public static ConfigEntry<bool> EnableClientInterpolation;
-        public static ConfigEntry<bool> EnablePlayerPrediction;
-
-        public static ConfigEntry<float> SendInterval;
-        public static ConfigEntry<int> PeersPerUpdate;
-        public static ConfigEntry<bool> EnableNetSync;
-
-        public static double NetTime;
-        public static float DeltaTimeFixedPhysics = 0.02f;
-        public static float DeltaTimePhysics = 0.01f;
-
         private Harmony _harmony;
-        private static bool _serverConfigsInitialized;
 
         private void Awake()
         {
-
             _serverConfig = new ConfigFile(Path.Combine(Paths.ConfigPath, "VitByr/VBNetTweaks/ServerConfig.cfg"), true);
             SynchronizationManager.Instance.RegisterCustomConfig(_serverConfig);
 
-            ModEnabled = _serverConfig.BindConfig("00 - Master", "ModEnabled", true, "Полностью включить/выключить мод VBNetTweaks", synced: true);
-            if (!ModEnabled.Value) return;
+            ModConfig.ModEnabled = _serverConfig.BindConfig("00 - Master", "ModEnabled", true, "Полностью включить/выключить мод VBNetTweaks", synced: true);
+            if (!ModConfig.ModEnabled.Value) return;
 
-            InitClientConfigs();
-            InitServerConfigs();
+            ModConfig.Initialize(Config, _serverConfig);
 
             _configSyncRPC = NetworkManager.Instance.AddRPC("VBNetTweaks_ConfigSync", OnAdminConfigSync, OnClientConfigSync);
 
             CreateConfigWatcher();
 
-            if (ModuleRpcBatcher.Value && ZRoutedRpc.instance != null)
+            if (ModConfig.ModuleRpcBatcher.Value && ZRoutedRpc.instance != null)
             {
-                ZRoutedRpc.instance.Register<ZPackage>("VBNT_RPCBatch", RpcBatcher.HandleBatch);
+                // Регистрируем обработчик батча
+                ZRoutedRpc.instance.Register<ZPackage>("VBNT_RPCBatch", (long sender, ZPackage pkg) => { RpcBatcher.HandleBatch(sender, pkg); });
                 Logger.LogInfo("VBNetTweaks: VBNT_RPCBatch registered");
             }
 
+            StartCoroutine(DelayedServerConfigInit());
+            StartCoroutine(DelayedServerPatchInit());
+
             _harmony = new Harmony(ModGUID);
 
-            if (ModuleSteamOptimizations.Value) _harmony.PatchAll(typeof(SteamOptimizations));
-            if (ModuleShipSync.Value) _harmony.PatchAll(typeof(ShipSyncSystem));
-            if (ModulePlayerSync.Value) _harmony.PatchAll(typeof(PlayerSyncSystem));
-            if (ModuleRpcBatcher.Value) _harmony.PatchAll(typeof(RpcBatcher));
-            if (ModuleSupportCache.Value)
+            if (ModConfig.ModuleSteamOptimizations.Value) _harmony.PatchAll(typeof(SteamOptimizations));
+            if (ModConfig.ModuleShipSync.Value) _harmony.PatchAll(typeof(ShipSyncSystem));
+            if (ModConfig.ModulePlayerSync.Value) _harmony.PatchAll(typeof(PlayerSyncSystem));
+            if (ModConfig.ModuleRpcBatcher.Value) _harmony.PatchAll(typeof(RpcBatcher));
+            if (ModConfig.ModuleSupportCache.Value)
             {
                 _harmony.PatchAll(typeof(WearNTear_ClearCachedSupport_Patch));
                 _harmony.PatchAll(typeof(WearNTear_OnDestroy_Patch));
@@ -95,74 +58,17 @@
                 _harmony.PatchAll(typeof(WearNTear_Destroy_Patch));
             }
 
-            if (ModuleZoneOwner.Value) _harmony.PatchAll(typeof(ZoneOwnerManager));
+            if (ModConfig.ModuleZoneOwner.Value) _harmony.PatchAll(typeof(ZoneOwnerManager));
 
             _harmony.PatchAll(typeof(ObjectPool));
             _harmony.PatchAll(typeof(PlayerCache));
+            _harmony.PatchAll(typeof(ZNetOptimizations));
 
-            StartCoroutine(DelayedServerConfigInit());
-            StartCoroutine(DelayedServerPatchInit());
+            if (ModConfig.ModuleAILOD.Value) _harmony.PatchAll(typeof(AILODPatches));
+            if (ModConfig.ModuleMonsterAI.Value) _harmony.PatchAll(typeof(MonsterAiPatches));
 
             Logger.LogInfo("VBNetTweaks загружен!");
-            if (DebugEnabled.Value) Logger.LogInfo("Режим отладки включен");
-        }
-
-        private void InitClientConfigs()
-        {
-            var debugSection = "01 - Debug";
-            DebugEnabled = Config.Bind(debugSection, "DebugEnabled", false, "Включить отладочный вывод");
-            VerboseLogging = Config.Bind(debugSection, "VerboseLogging", false, "Включить подробное логирование");
-
-            var modulesSection = "02 - Modules";
-            EnableClientCompression = Config.Bind(modulesSection, "ClientCompression", false, "Сжимать данные на клиенте (может вызывать проблемы с визуальными эффектами)");
-            ModuleAILOD = Config.Bind(modulesSection, "AILOD", true, "LOD для AI существ");
-            ModuleMonsterAI = Config.Bind(modulesSection, "MonsterAI", true, "Оптимизация AI монстров");
-            ModuleSteamOptimizations = Config.Bind(modulesSection, "SteamOptimizations", true, "Оптимизации Steam сокета");
-            ModulePlayerSync = Config.Bind(modulesSection, "PlayerSync", true, "Синхронизация игроков");
-            ModuleShipSync = Config.Bind(modulesSection, "ShipSync", true, "Синхронизация кораблей");
-            ModuleZoneOwner = Config.Bind(modulesSection, "ZoneOwner", true, "Автоматическая передача владения зонами");
-            ModuleSupportCache = Config.Bind(modulesSection, "SupportCache", true, "Кэш поддержки построек");
-            ModuleRpcBatcher = Config.Bind(modulesSection, "RpcBatcher", true, "Пакетная обработка RPC");
-
-            var compressionSection = "03 - Compression Settings";
-            m_CompressionAlgorithm = Config.Bind(compressionSection, "Algorithm", CompressionAlgorithm.Deflate, "Алгоритм сжатия: Deflate или Zstd");
-            CompressionLevel = Config.Bind(compressionSection, "Level", 2, new ConfigDescription("Уровень сжатия (1-10)", new AcceptableValueRange<int>(1, 10)));
-
-            var zdoSection = "04 - ZDO Throttling Settings";
-            ZDOThrottleDistance = Config.Bind(zdoSection, "Distance", 500f, "Дистанция для троттлинга ZDO");
-
-            var aiSection = "05 - AI LOD Settings";
-            AILODNearDistance = Config.Bind(aiSection, "NearDistance", 100f, "Дистанция полной скорости AI");
-            AILODFarDistance = Config.Bind(aiSection, "FarDistance", 300f, "Дистанция замедления AI");
-            AILODThrottleFactor = Config.Bind(aiSection, "ThrottleFactor", 0.5f, new ConfigDescription("Коэффициент замедления AI", new AcceptableValueRange<float>(0.25f, 0.75f)));
-
-            var steamSection = "06 - Steam Settings";
-            SteamSendRateMinKB = Config.Bind(steamSection, "MinRateKB", 256, "Минимальная скорость Steam");
-            SteamSendRateMaxKB = Config.Bind(steamSection, "MaxRateKB", 1024, "Максимальная скорость Steam");
-            SteamSendBufferSize = Config.Bind(steamSection, "BufferSize", 100_000_000, "Размер буфера Steam");
-
-            var playerSyncSection = "07 - Player Sync Settings";
-            EnableClientInterpolation = Config.Bind(playerSyncSection, "Interpolation", true, "Сглаживание игроков");
-            EnablePlayerPrediction = Config.Bind(playerSyncSection, "Prediction", true, "Предсказание движения");
-        }
-
-        private void InitServerConfigs()
-        {
-            var serverSection = "08 - Server Settings";
-            ModuleCompression = _serverConfig.BindConfig(serverSection, "Compression", true, "Сжатие сетевого трафика на сервере", synced: true);
-            ModuleZDOThrottling = Config.BindConfig(serverSection, "ZDOThrottling", true, "Троттлинг дальних ZDO объектов", synced: true);
-
-            SendInterval = _serverConfig.BindConfig(serverSection, "SendInterval", 0.05f, "Интервал отправки данных (секунды)", synced: true);
-            PeersPerUpdate = _serverConfig.BindConfig(serverSection, "PeersPerUpdate", 20, "Количество пиров за один апдейт", synced: true);
-            EnableNetSync = _serverConfig.BindConfig(serverSection, "EnableNetSync", true, "Включить новую систему синхронизации NetSync", synced: true);
-
-            var zoneSection = "09 - Zone Owner Settings";
-            ZoneOwnerManager.PingThreshold = _serverConfig.BindConfig(zoneSection, "PingThreshold", 100, "Порог пинга для смены владельца зоны (мс)", synced: true);
-            ZoneOwnerManager.Hysteresis = _serverConfig.BindConfig(zoneSection, "Hysteresis", 20, "Гистерезис для смены владельца (мс)", synced: true);
-            ZoneOwnerManager.TransferCooldown = _serverConfig.BindConfig(zoneSection, "TransferCooldown", 5f, "Задержка между сменами владельца (сек)", synced: true);
-            ZoneOwnerManager.OwnerUpdateInterval = _serverConfig.BindConfig(zoneSection, "UpdateInterval", 2f, "Частота проверки владельцев зон (сек)", synced: true);
-
-            ModEnabled.SettingChanged += OnModEnabledChanged;
+            if (ModConfig.DebugEnabled.Value) Logger.LogInfo("Режим отладки включен");
         }
 
         private ZPackage BuildConfigPackage()
@@ -170,16 +76,27 @@
             ZPackage pkg = new ZPackage();
             try
             {
-                pkg.Write(ModEnabled.Value);
-                pkg.Write(ModuleCompression.Value);
-                pkg.Write(ModuleZDOThrottling.Value);
-                pkg.Write(SendInterval.Value);
-                pkg.Write(PeersPerUpdate.Value);
-                pkg.Write(EnableNetSync.Value);
+                pkg.Write(ModConfig.ModEnabled.Value);
+                pkg.Write(ModConfig.ModuleCompression.Value);
+                pkg.Write(ModConfig.ModuleZDOThrottling.Value);
+                pkg.Write(ModConfig.SteamSendRateMinKB.Value);
+                pkg.Write(ModConfig.SteamSendRateMaxKB.Value);
+                pkg.Write(ModConfig.SteamSendBufferSize.Value);
+                pkg.Write((int)CompressionController.Algorithm.Value);
+                pkg.Write(CompressionController.Level.Value);
+                pkg.Write(CompressionController.MinSize.Value);
+                pkg.Write(CompressionController.Adaptive.Value);
+                pkg.Write(CompressionController.TargetRatio.Value);
+                pkg.Write(ModConfig.SendInterval.Value);
+                pkg.Write(ModConfig.PeersPerUpdate.Value);
+                pkg.Write(ModConfig.EnableNetSync.Value);
                 pkg.Write(ZoneOwnerManager.PingThreshold.Value);
                 pkg.Write(ZoneOwnerManager.Hysteresis.Value);
                 pkg.Write(ZoneOwnerManager.TransferCooldown.Value);
                 pkg.Write(ZoneOwnerManager.OwnerUpdateInterval.Value);
+                pkg.Write(ModConfig.AILODNearDistance.Value);
+                pkg.Write(ModConfig.AILODFarDistance.Value);
+                pkg.Write(ModConfig.AILODThrottleFactor.Value);
             }
             catch (Exception e)
             {
@@ -203,24 +120,34 @@
                 pkg.SetPos(0);
 
                 bool newModEnabled = pkg.ReadBool();
-                ModuleCompression.Value = pkg.ReadBool();
-                ModuleZDOThrottling.Value = pkg.ReadBool();
-                SendInterval.Value = pkg.ReadSingle();
-                PeersPerUpdate.Value = pkg.ReadInt();
-                EnableNetSync.Value = pkg.ReadBool();
+                ModConfig.ModuleCompression.Value = pkg.ReadBool();
+                ModConfig.ModuleZDOThrottling.Value = pkg.ReadBool();
+                ModConfig.SteamSendRateMinKB.Value = pkg.ReadInt();
+                ModConfig.SteamSendRateMaxKB.Value = pkg.ReadInt();
+                ModConfig.SteamSendBufferSize.Value = pkg.ReadInt();
+                CompressionController.Algorithm.Value = (CompressionAlgorithm)pkg.ReadInt();
+                CompressionController.Level.Value = pkg.ReadInt();
+                CompressionController.MinSize.Value = pkg.ReadInt();
+                CompressionController.Adaptive.Value = pkg.ReadBool();
+                CompressionController.TargetRatio.Value = pkg.ReadSingle();
+                ModConfig.SendInterval.Value = pkg.ReadSingle();
+                ModConfig.PeersPerUpdate.Value = pkg.ReadInt();
+                ModConfig.EnableNetSync.Value = pkg.ReadBool();
                 ZoneOwnerManager.PingThreshold.Value = pkg.ReadInt();
                 ZoneOwnerManager.Hysteresis.Value = pkg.ReadInt();
                 ZoneOwnerManager.TransferCooldown.Value = pkg.ReadSingle();
                 ZoneOwnerManager.OwnerUpdateInterval.Value = pkg.ReadSingle();
+                ModConfig.AILODNearDistance.Value = pkg.ReadSingle();
+                ModConfig.AILODFarDistance.Value = pkg.ReadSingle();
+                ModConfig.AILODThrottleFactor.Value = pkg.ReadSingle();
 
-                if (ModEnabled.Value != newModEnabled)
+                if (ModConfig.ModEnabled.Value != newModEnabled)
                 {
-                    ModEnabled.Value = newModEnabled;
+                    ModConfig.ModEnabled.Value = newModEnabled;
                     OnModEnabledStateChanged();
                 }
                 else
                 {
-                    // Если мод уже был включен, но изменились другие настройки
                     ReinitializeAllModules();
                 }
 
@@ -232,71 +159,62 @@
             }
         }
 
-        private void OnModEnabledChanged(object sender, EventArgs e)
-        {
-            if (!ZNet.instance || !ZNet.instance.IsServer()) return;
-
-            Logger.LogInfo($"[VBNetTweaks] ModEnabled изменен на {ModEnabled.Value}");
-
-            StartCoroutine(ApplyServerConfigChanges());
-        }
-
         private void OnModEnabledStateChanged()
         {
-            Logger.LogInfo($"[VBNetTweaks] ModEnabled на клиенте изменен на {ModEnabled.Value}");
+            Logger.LogInfo($"[VBNetTweaks] ModEnabled на клиенте изменен на {ModConfig.ModEnabled.Value}");
 
-            if (ModEnabled.Value)
+            if (ModConfig.ModEnabled.Value)
             {
-                if (ModuleCompression.Value && EnableClientCompression.Value)
+                if (ModConfig.ModuleCompression.Value)
                 {
                     ZDONetworkOptimizer.Initialize();
-                    Logger.LogInfo("[VBNetTweaks] Client compression initialized");
+                    Logger.LogInfo("[VBNetTweaks] Compression system initialized");
                 }
 
-                if (ModuleSteamOptimizations.Value)
+                if (ModConfig.ModuleSteamOptimizations.Value)
                 {
                     Logger.LogInfo("[VBNetTweaks] Steam optimizations active");
                 }
 
-                if (ModuleShipSync.Value)
+                if (ModConfig.ModuleShipSync.Value)
                 {
                     Logger.LogInfo("[VBNetTweaks] Ship sync system active");
                 }
 
-                if (ModulePlayerSync.Value)
+                if (ModConfig.ModulePlayerSync.Value)
                 {
                     Logger.LogInfo("[VBNetTweaks] Player sync system active");
                 }
 
-                if (ModuleZoneOwner.Value && Helper.IsServer())
+                if (ModConfig.ModuleZoneOwner.Value/* && Helper.IsServer()*/)
                 {
                     ZoneOwnerManager.Initialize();
                     Logger.LogInfo("[VBNetTweaks] Zone owner manager initialized");
                 }
 
-                if (ModuleSupportCache.Value)
+                if (ModConfig.ModuleSupportCache.Value)
                 {
                     SupportManager.SupportRecalcInterval = 5f;
                     SupportManager.SupportCacheDuration = 1f;
                     Logger.LogInfo("[VBNetTweaks] Support cache system active");
                 }
 
-                if (ModuleRpcBatcher.Value && ZRoutedRpc.instance != null)
+                if (ModConfig.ModuleRpcBatcher.Value && ZRoutedRpc.instance != null)
                 {
                     Logger.LogInfo("[VBNetTweaks] RPC batcher active");
                 }
 
-                if (ModuleZDOThrottling.Value)
+                if (ModConfig.ModuleZDOThrottling.Value)
                 {
-                    Logger.LogInfo($"[VBNetTweaks] ZDO throttling active at {ZDOThrottleDistance.Value}m");
+                    Logger.LogInfo($"[VBNetTweaks] ZDO throttling active at {ModConfig.ZDOThrottleDistance.Value}m");
                 }
 
-                if (ModuleAILOD.Value && Helper.IsServer())
+                if (ModConfig.ModuleAILOD.Value/* && Helper.IsServer()*/)
                 {
-                    Logger.LogInfo($"[VBNetTweaks] AI LOD active (near:{AILODNearDistance.Value}m, far:{AILODFarDistance.Value}m)");
+                    Logger.LogInfo($"[VBNetTweaks] AI LOD active (near:{ModConfig.AILODNearDistance.Value}m, far:{ModConfig.AILODFarDistance.Value}m)");
                 }
 
-                if (ModuleMonsterAI.Value && Helper.IsServer())
+                if (ModConfig.ModuleMonsterAI.Value/* && Helper.IsServer()*/)
                 {
                     Logger.LogInfo("[VBNetTweaks] Monster AI patches active");
                 }
@@ -304,11 +222,6 @@
             else
             {
                 Logger.LogInfo("[VBNetTweaks] Mod disabled - disabling all systems");
-
-                if (ModuleCompression.Value && EnableClientCompression.Value)
-                {
-                    Logger.LogInfo("[VBNetTweaks] Client compression disabled");
-                }
 
                 SupportManager.Clear(null);
                 Logger.LogInfo("[VBNetTweaks] All systems disabled");
@@ -319,22 +232,19 @@
         {
             Logger.LogInfo("[VBNetTweaks] Reinitializing all modules...");
 
-            if (!ModEnabled.Value) return;
+            if (!ModConfig.ModEnabled.Value) return;
 
-            if (ModuleCompression.Value)
+            if (ModConfig.ModuleCompression.Value)
             {
-                if (Helper.IsServer() || EnableClientCompression.Value)
-                {
-                    ZDONetworkOptimizer.Initialize();
-                }
+                ZDONetworkOptimizer.Initialize();
             }
 
-            if (ModuleZoneOwner.Value && Helper.IsServer())
+            if (ModConfig.ModuleZoneOwner.Value/* && Helper.IsServer()*/)
             {
                 ZoneOwnerManager.Initialize();
             }
 
-            if (ModuleSupportCache.Value)
+            if (ModConfig.ModuleSupportCache.Value)
             {
                 SupportManager.SupportRecalcInterval = 5f;
                 SupportManager.SupportCacheDuration = 1f;
@@ -373,19 +283,27 @@
             ApplyConfigFromPackage(pkg);
             ApplySyncedConfigChanges();
 
+            ModConfig._serverConfigsInitialized = true;
+
             yield break;
         }
 
         private void ApplySyncedConfigChanges()
         {
-            if (ModuleCompression.Value)
+            if (ModConfig.ModuleCompression.Value)
             {
                 ZDONetworkOptimizer.Initialize();
+                Logger.LogInfo("[VBNetTweaks] Compression reinitialized with new settings");
             }
 
-            if (ModuleZoneOwner.Value)
+            if (ModConfig.ModuleZoneOwner.Value)
             {
                 ZoneOwnerManager.Initialize();
+            }
+
+            if (ModConfig.SendInterval != null)
+            {
+                // AdaptiveThrottler сам подхватит новое значение при следующем Update
             }
         }
 
@@ -405,12 +323,12 @@
             {
                 if (!ZNet.instance || !ZNet.instance.IsServer()) return;
 
-                bool oldValue = ModEnabled.Value;
+                bool oldValue = ModConfig.ModEnabled.Value;
                 _serverConfig.Reload();
 
-                if (oldValue != ModEnabled.Value)
+                if (oldValue != ModConfig.ModEnabled.Value)
                 {
-                    Logger.LogInfo($"[VBNetTweaks] ModEnabled changed from {oldValue} to {ModEnabled.Value} via file watcher");
+                    Logger.LogInfo($"[VBNetTweaks] ModEnabled changed from {oldValue} to {ModConfig.ModEnabled.Value} via file watcher");
                 }
 
                 StartCoroutine(ApplyServerConfigChanges());
@@ -441,7 +359,7 @@
 
                 Logger.LogInfo($"[VBNetTweaks] Серверный конфиг изменён, данные отправлены {sentCount} клиентам");
 
-                if (!ModEnabled.Value)
+                if (!ModConfig.ModEnabled.Value)
                 {
                     Logger.LogInfo("[VBNetTweaks] Мод отключен на сервере");
                 }
@@ -466,9 +384,6 @@
 
             if (!Helper.IsServer()) yield break;
 
-            if (ModuleAILOD.Value) _harmony.PatchAll(typeof(AILODPatches));
-            if (ModuleMonsterAI.Value) _harmony.PatchAll(typeof(MonsterAiPatches));
-
             Logger.LogInfo("VBNetTweaks: серверные патчи успешно применены.");
         }
 
@@ -477,58 +392,71 @@
             int maxAttempts = 100;
             for (int i = 0; i < maxAttempts; i++)
             {
-                if (ZNet.instance) break;
+                if (ZNet.instance && ZNet.instance.IsServer())
+                {
+                    break;
+                }
+
                 yield return new WaitForSeconds(0.25f);
             }
 
-            if (Helper.IsServer())
+            if (!ZNet.instance)
             {
-                if (ModuleCompression.Value)
-                {
-                    ZDONetworkOptimizer.Initialize();
-                    _harmony.PatchAll(typeof(ZDONetworkOptimizer));
-                }
-
-                _serverConfigsInitialized = true;
-                Logger.LogInfo("Серверные настройки VBNetTweaks инициализированы");
-
-                if (ZNet.instance && ZNet.instance.IsServer() && ZNet.instance.GetPeers().Count > 0)
-                {
-                    StartCoroutine(ApplyServerConfigChanges());
-                }
+                Logger.LogWarning("ZNet.instance не появился за 25 секунд, пропускаем инициализацию");
+                yield break;
             }
-        }
 
-        private void OnDestroy() => _harmony?.UnpatchSelf();
-
-        public static void LogDebug(string message)
-        {
-            if (DebugEnabled.Value) Debug.LogWarning($"[VBNetTweaks] {message}");
-        }
-
-        public static void LogVerbose(string message)
-        {
-            if (VerboseLogging.Value) Debug.Log($"[VBNetTweaks] {message}");
-        }
-
-        public static bool GetSceneDebugEnabled()
-        {
             try
             {
-                return SceneDebugEnabled?.Value ?? false;
+                if (_harmony == null)
+                {
+                    Logger.LogError("Harmony instance is null в DelayedServerConfigInit");
+                    yield break;
+                }
+
+                if (ModConfig.ModuleCompression != null && ModConfig.ModuleCompression.Value)
+                {
+                    try
+                    {
+                        ZDONetworkOptimizer.Initialize();
+                        _harmony.PatchAll(typeof(ZDONetworkOptimizer));
+                        Logger.LogInfo("ZDONetworkOptimizer инициализирован и заплачен");
+                    }
+                    catch (Exception e)
+                    {
+                        Logger.LogError($"Ошибка при инициализации компрессии: {e.Message}");
+                    }
+                }
+
+                if (Helper.IsServer())
+                {
+                    ModConfig._serverConfigsInitialized = true;
+                    Logger.LogInfo("Серверные настройки VBNetTweaks инициализированы");
+                }
+
+                if (Helper.IsServer() && ZNet.instance.IsServer())
+                {
+                    var peers = ZNet.instance.GetPeers();
+                    if (peers != null && peers.Count > 0)
+                    {
+                        StartCoroutine(ApplyServerConfigChanges());
+                    }
+                    else
+                    {
+                        Logger.LogInfo("Нет подключенных пиров, отправка конфига отложена");
+                    }
+                }
             }
-            catch
+            catch (Exception e)
             {
-                return false;
+                Logger.LogError($"Ошибка в DelayedServerConfigInit: {e.Message}\n{e.StackTrace}");
             }
         }
 
-        public static float GetEffectiveSendInterval()
+        private void OnDestroy()
         {
-            float cfg = (!_serverConfigsInitialized) ? 0.05f : (SendInterval?.Value ?? 0.05f);
-            return AdaptiveThrottler.GetInterval(cfg);
+            ZoneOwnerManager.Shutdown();
+            _harmony?.UnpatchSelf();
         }
-
-        public static int GetPeersPerUpdate() => (!_serverConfigsInitialized) ? 20 : (PeersPerUpdate?.Value ?? 20);
     }
 }

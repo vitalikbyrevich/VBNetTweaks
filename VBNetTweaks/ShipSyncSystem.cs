@@ -71,7 +71,7 @@
             Player player = PlayerCache.GetById(playerId);
             if (!player)
             {
-                VBNetTweaks.LogDebug($"RPC_SyncAttachment: player {playerId} not found");
+                Helper.LogDebug($"RPC_SyncAttachment: player {playerId} not found");
                 return;
             }
 

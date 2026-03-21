@@ -1,4 +1,4 @@
-﻿namespace VBNetTweaks.Utils
+﻿namespace VBNetTweaks.CompressionUtills
 {
     public enum CompressionAlgorithm
     {

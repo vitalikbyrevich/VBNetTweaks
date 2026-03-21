@@ -58,13 +58,13 @@
         [Conditional("DEBUG")]
         private static void LogAlloc(string type)
         {
-            if (VBNetTweaks.DebugEnabled.Value && VBNetTweaks.VerboseLogging.Value) VBNetTweaks.LogVerbose($"ObjectPool: allocated new {type}");
+            if (ModConfig.DebugEnabled.Value && ModConfig.VerboseLogging.Value) Helper.LogVerbose($"ObjectPool: allocated new {type}");
         }
 
         [Conditional("DEBUG")]
         private static void LogReuse(string type)
         {
-            if (VBNetTweaks.DebugEnabled.Value && VBNetTweaks.VerboseLogging.Value) VBNetTweaks.LogVerbose($"ObjectPool: reused {type}");
+            if (ModConfig.DebugEnabled.Value && ModConfig.VerboseLogging.Value) Helper.LogVerbose($"ObjectPool: reused {type}");
         }
         [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.Awake))]
         [HarmonyPostfix]
@@ -73,8 +73,9 @@
             _pkgPool.Clear();
             Pool<List<ZDO>>.Stack.Clear();
             Pool<List<Player>>.Stack.Clear();
+            Pool<List<ZPackage>>.Stack.Clear();
         
-            VBNetTweaks.LogVerbose("ObjectPool cleared on scene load");
+            Helper.LogVerbose("ObjectPool cleared on scene load");
         }
     }
 }

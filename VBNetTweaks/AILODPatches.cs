@@ -17,11 +17,11 @@
                 if (d < nearestDist) nearestDist = d;
             }
 
-            if (nearestDist <= VBNetTweaks.AILODNearDistance.Value) return true;
+            if (nearestDist <= ModConfig.AILODNearDistance.Value) return true;
 
-            if (nearestDist > VBNetTweaks.AILODFarDistance.Value)
+            if (nearestDist > ModConfig.AILODFarDistance.Value)
             {
-                float factor = Mathf.Clamp(VBNetTweaks.AILODThrottleFactor.Value, 0.25f, 0.75f);
+                float factor = Mathf.Clamp(ModConfig.AILODThrottleFactor.Value, 0.25f, 0.75f);
                 if (Time.time % (1f / factor) > Time.fixedDeltaTime) return false;
             }
             return true;
@@ -31,7 +31,7 @@
         [HarmonyPrefix]
         public static bool FixedUpdate_Prefix(Character __instance)
         {
-            if (!VBNetTweaks.ModuleAILOD.Value) return true;
+            if (!ModConfig.ModuleAILOD.Value) return true;
     
             var nview = __instance.m_nview;
             if (!nview || !nview.IsValid() || !nview.IsOwner()) return true;
