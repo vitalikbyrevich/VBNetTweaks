@@ -46,7 +46,6 @@
     <Compile Include="PlayerSyncSystem.cs" />
     <Compile Include="RpcBatcher.cs" />
     <Compile Include="ShipSyncSystem.cs" />
-    <Compile Include="SupportManager.cs" />
     <Compile Include="ZDOUtills\ZDONetworkOptimizer.cs" />
     <Compile Include="ZDOUtills\ZDORemoval.cs" />
     <Compile Include="ZDOUtills\ZDOSorting.cs" />
@@ -77,8 +76,6 @@
     <None Include="0\ZDOWeightingSystem.cs" />
     <None Include="0\ZRoutedRpcOptimizations.cs" />
     <None Include="0\FixedNetworkOptimizations.cs" />
-    <Compile Include="AILODPatches.cs" />
-    <Compile Include="MonsterAiPatches.cs" />
     <Compile Include="Utils\GlobalUsings.cs" />
     <Compile Include="Utils\Helper.cs" />
     <None Include="0\InventoryOptimization.cs" />

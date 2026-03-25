@@ -6,6 +6,7 @@
         private const int COMPRESSION_VERSION = 1;
         
         private static readonly int HashAI = "ai".GetStableHashCode();
+        private static readonly List<ZPackage> _zdoBuffer = new();
 
         private const string RPC_VERSION = "VBNT.CompressionVersion";
         private const string RPC_ENABLED = "VBNT.CompressionEnabled";
@@ -22,7 +23,10 @@
             public bool ReceivingCompressed { get; set; }
             public bool IsCompatible => Version == COMPRESSION_VERSION;
         }
-
+        
+        private static Dictionary<ZDO, float> _lastUpdateTime = new();
+        private static Dictionary<ZDO, Vector3> _lastPos = new();
+        
         public static void Initialize()
         {
             try
@@ -52,19 +56,38 @@
             CompressionController.Shutdown();
             _peerStatus.Clear();
         }
+    
+        public static bool ShouldUpdatePosition(ZDO zdo, Vector3 newPos, float cullSize)
+        {
+            if (!_lastPos.TryGetValue(zdo, out var lastPos)) 
+            {
+                _lastPos[zdo] = newPos;
+                return true;
+            }
+        
+            float sqrDist = (newPos - lastPos).sqrMagnitude;
+            if (sqrDist < cullSize * cullSize) return false;
+        
+            _lastPos[zdo] = newPos;
+            return true;
+        }
 
         public static bool ShouldCompressSend(ISocket socket)
         {
-          //  if (_serverMode) return true;
-    
             if (!_peerStatus.TryGetValue(socket, out var peerStatus)) return false;
-            return peerStatus.SendingCompressed;
+            
+            // Отправляем сжатые данные, если:
+            // 1. Пир поддерживает компрессию (версия совместима)
+            // 2. Компрессия включена на пире
+            // 3. Мы договорились использовать компрессию
+            return peerStatus.IsCompatible && peerStatus.PeerEnabled && peerStatus.SendingCompressed;
         }
 
         public static bool ShouldCompressReceive(ISocket socket)
         {
             if (!_peerStatus.TryGetValue(socket, out var peerStatus)) return false;
-            if (/*!_serverMode &&*/ peerStatus.ReceivingCompressed) return true;
+            
+            // Получаем сжатые данные, если пир отправляет их сжатыми
             return peerStatus.ReceivingCompressed;
         }
 
@@ -76,6 +99,31 @@
         public static byte[] Compress(ISocket socket, byte[] data, CompressionController.DataType dataType)
         {
             return CompressionController.Compress(socket, data, dataType);
+        }
+
+        private static CompressionController.DataType DetectDataType(byte[] data)
+        {
+            if (data.Length < 4) return CompressionController.DataType.Unknown;
+            
+            // Простая эвристика для определения ZDO пакетов
+            // ZDO пакеты обычно начинаются с количества ZDO (небольшое число)
+            // и содержат много данных
+            try
+            {
+                int possibleCount = BitConverter.ToInt32(data, 0);
+                
+                // ZDO пакеты: разумное количество объектов и большой размер
+                if (possibleCount > 0 && possibleCount < 2000 && data.Length > 100)
+                {
+                    return CompressionController.DataType.ZDO;
+                }
+            }
+            catch
+            {
+                // Игнорируем
+            }
+            
+            return CompressionController.DataType.Unknown;
         }
 
         public static void OptimizedSendZDOToPeers(ZDOMan zdoManager, float dt)
@@ -100,7 +148,8 @@
                     var peer = zdoManager.m_peers[peerIndex];
                     if (peer?.m_peer?.m_socket?.IsConnected() != true) continue;
 
-                    if (/*Helper.IsServer() &&*/ ModConfig.ModuleZDOThrottling.Value) ZDOThrottling.ApplyZDOThrottle(zdoManager, peer);
+                    if (ModConfig.ModuleZDOThrottling.Value) 
+                        ZDOThrottling.ApplyZDOThrottle(zdoManager, peer);
 
                     PerformanceMonitor.Track("SendZDOs", () => { zdoManager.SendZDOs(peer, flush: false); });
 
@@ -166,22 +215,9 @@
 
             peer.m_rpc.Invoke(RPC_STARTED, started);
 
-            var socketType = peer.m_socket.GetType();
-            var flushMethod = socketType.GetMethod("Flush", Type.EmptyTypes);
-
-            if (flushMethod != null && flushMethod.DeclaringType != typeof(object))
-            {
-                try
-                {
-                    peer.m_socket.Flush();
-                }
-                catch (Exception e)
-                {
-                    Helper.LogDebug($"Error flushing socket: {e.Message}");
-                }
-            }
-
+            // Устанавливаем флаг отправки сжатых данных
             peerStatus.SendingCompressed = started;
+            
             Helper.LogDebug($"Compression {(started ? "started" : "stopped")} with {GetPeerName(peer)}");
         }
 
@@ -189,8 +225,16 @@
         {
             if (!_peerStatus.TryGetValue(peer.m_socket, out var peerStatus)) return;
 
+            // Устанавливаем флаг получения сжатых данных
             peerStatus.ReceivingCompressed = started;
-            Helper.LogDebug($"Receiving {(started ? "compressed" : "uncompressed")} from {GetPeerName(peer)}");
+            
+            // Если мы клиент, также устанавливаем флаг отправки (для двусторонней компрессии)
+            if (!Helper.IsServer())
+            {
+                peerStatus.SendingCompressed = started;
+            }
+            
+            Helper.LogDebug($"Compression {(started ? "enabled" : "disabled")} for {GetPeerName(peer)} (Sending: {peerStatus.SendingCompressed}, Receiving: {peerStatus.ReceivingCompressed})");
         }
 
         private static string GetPeerName(ZNetPeer peer)
@@ -275,6 +319,37 @@
             return true;
         }
 
+        // Используем ZSteamSocket.Send вместо ZRpc.SendPackage
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(ZSteamSocket), nameof(ZSteamSocket.Send))]
+        static bool ZSteamSocket_Send_Prefix(ZSteamSocket __instance, ZPackage pkg)
+        {
+            if (!ModConfig.ModuleCompression.Value) return true;
+
+            var socket = __instance as ISocket;
+            if (socket == null) return true;
+            
+            if (!ShouldCompressSend(socket)) return true;
+
+            var data = pkg.GetArray();
+            var dataType = DetectDataType(data);
+            
+            // Сжимаем только ZDO данные
+            if (dataType == CompressionController.DataType.ZDO)
+            {
+                var compressed = Compress(socket, data, dataType);
+
+                if (compressed.Length < data.Length)
+                {
+                    var compressedPkg = new ZPackage(compressed);
+                    __instance.Send(compressedPkg);
+                    return false; // Пропускаем оригинальный вызов
+                }
+            }
+
+            return true; // Отправляем оригинальный пакет
+        }
+
         [HarmonyPatch(typeof(ZNet), nameof(ZNet.OnNewConnection))]
         [HarmonyPostfix]
         static void OnNewConnection(ZNet __instance, ZNetPeer peer)
@@ -284,6 +359,15 @@
             _peerStatus[peer.m_socket] = new PeerCompressionStatus();
             RegisterCompressionRPCs(peer);
             SendCompressionVersion(peer);
+            
+            // Для клиента: буферизация ZDO пакетов до инициализации ZDOMan
+            if (!Helper.IsServer())
+            {
+                peer.m_rpc.Register("ZDOData", delegate(ZRpc _, ZPackage package)
+                {
+                    lock (_zdoBuffer) _zdoBuffer.Add(package);
+                });
+            }
         }
 
         [HarmonyPatch(typeof(ZNet), nameof(ZNet.Disconnect))]
@@ -291,6 +375,54 @@
         static void OnDisconnect(ZNet __instance, ZNetPeer peer)
         {
             _peerStatus.Remove(peer.m_socket);
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(ZNet), nameof(ZNet.Shutdown))]
+        private static void ClearBufferOnShutdown()
+        {
+            lock (_zdoBuffer) _zdoBuffer.Clear();
+            _peerStatus.Clear();
+            _lastPos.Clear();
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.AddPeer))]
+        private static void ParseBufferedZPackages(ZDOMan __instance, ZNetPeer netPeer)
+        {
+            if (Helper.IsServer()) return;
+            
+            if (_zdoBuffer.Count == 0) return;
+            
+            List<ZPackage> bufferCopy;
+            lock (_zdoBuffer)
+            {
+                bufferCopy = new List<ZPackage>(_zdoBuffer);
+                _zdoBuffer.Clear();
+            }
+            
+            foreach (ZPackage item in bufferCopy)
+            {
+                try
+                {
+                    __instance.RPC_ZDOData(netPeer.m_rpc, item);
+                }
+                catch (Exception e)
+                {
+                    Helper.LogDebug($"Error parsing buffered ZDO: {e.Message}");
+                }
+            }
+        }
+        
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(ZDO), nameof(ZDO.Set), typeof(int), typeof(Vector3))]
+        public static bool Set_Prefix(ZDO __instance, int hash, Vector3 value)
+        {
+            if (Helper.IsServer()) return true;
+            if (!ModConfig.ModuleZDOThrottling.Value) return true;
+            if (__instance.IsOwner()) return true;
+    
+            return ShouldUpdatePosition(__instance, value, 0.05f);
         }
     }
 }
