@@ -1,4 +1,4 @@
-﻿namespace VBNetTweaks
+﻿namespace VBNetTweaks.Utils
 {
     [HarmonyPatch]
     public static class PlayerCache
@@ -70,7 +70,7 @@
                 }
             }
             
-            if (ModConfig.DebugEnabled.Value && ModConfig.VerboseLogging.Value) Helper.LogVerbose($"PlayerCache refreshed: {_cachedPlayers.Count} players");
+            ZLog.Log($"PlayerCache refreshed: {_cachedPlayers.Count} players");
         }
 
         public static void Invalidate()
@@ -92,6 +92,20 @@
         {
             PlayerCache.Invalidate();
             if (peer != null) PlayerCache.RemovePlayer(peer.m_uid);
+        }
+        [HarmonyPatch(typeof(Player), nameof(Player.AttachStart))]
+        [HarmonyPostfix]
+        private static void OnAttachStart(Player __instance)
+        {
+            long id = __instance.GetPlayerID();
+            PlayerCache.UpdatePlayerState(id, attached: true, shipId: new ZDOID());
+        }
+        [HarmonyPatch(typeof(Player), nameof(Player.AttachStop))]
+        [HarmonyPostfix]
+        private static void OnAttachStop(Player __instance)
+        {
+            long id = __instance.GetPlayerID();
+            PlayerCache.UpdatePlayerState(id, attached: false, shipId: new ZDOID());
         }
     }
 }

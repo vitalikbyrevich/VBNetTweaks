@@ -35,30 +35,34 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="AdaptiveThrottler.cs" />
-    <Compile Include="CompressionUtills\CompressionAlgorithm.cs" />
-    <Compile Include="CompressionUtills\CompressionController.cs" />
-    <Compile Include="CompressionUtills\DeflateCompressor.cs" />
+    <None Include="0\AdaptiveThrottler.cs" />
+    <None Include="0\Core\ConfigManager.cs" />
+    <None Include="0\Core\HarmonyPatcher.cs" />
+    <None Include="0\Core\ModConfig.cs" />
+    <None Include="0\Core\ModuleInitializer.cs" />
+    <None Include="0\Core\NetworkConfigSync.cs" />
+    <None Include="0\ObjectPool.cs" />
+    <None Include="0\PlayerSyncSystem.cs" />
     <Compile Include="CompressionUtills\ICompressor.cs" />
-    <Compile Include="CompressionUtills\ZstdCompressor.cs" />
-    <Compile Include="Core\ModConfig.cs" />
-    <Compile Include="PlayerCache.cs" />
-    <Compile Include="PlayerSyncSystem.cs" />
-    <Compile Include="RpcBatcher.cs" />
+    <Compile Include="GlobalUsings.cs" />
+    <Compile Include="Patches\NetworkSyncPatches.cs" />
+    <Compile Include="Patches\StatusEffectVFXManager.cs" />
+    <Compile Include="Patches\ZSteamSocket_Patchs.cs" />
+    <Compile Include="Patches\ZNet_Paths.cs" />
     <Compile Include="ShipSyncSystem.cs" />
+    <Compile Include="Utils\PlayerCache.cs" />
+    <None Include="0\RpcBatcher.cs" />
+    <None Include="0\RpcSerializer.cs" />
+    <None Include="0\ZDODeltaSync.cs" />
+    <None Include="0\ZDOSorting.cs" />
+    <None Include="0\ZoneOwnerManager.cs" />
     <Compile Include="ZDOUtills\ZDONetworkOptimizer.cs" />
     <Compile Include="ZDOUtills\ZDORemoval.cs" />
-    <Compile Include="ZDOUtills\ZDOSorting.cs" />
-    <Compile Include="ZDOUtills\ZDOThrottling.cs" />
-    <Compile Include="ZoneOwnerManager.cs" />
     <None Include="0\BufferPool.cs" />
     <None Include="0\ListPool.cs" />
     <None Include="0\UnifiedSceneOptimizations.cs" />
     <None Include="0\UnifiedZDOTranspiler.cs" />
-    <Compile Include="Utils\ObjectPool.cs" />
     <Compile Include="Utils\PerformanceMonitor.cs" />
-    <Compile Include="Utils\RpcSerializer.cs" />
-    <Compile Include="Utils\ZNetOptimizations.cs" />
     <None Include="0\ZDOCompressionOptimizer.cs" />
     <None Include="0\AdaptiveOptimizationManager.cs" />
     <None Include="0\DynamicZDOThrottler.cs" />
@@ -76,14 +80,14 @@
     <None Include="0\ZDOWeightingSystem.cs" />
     <None Include="0\ZRoutedRpcOptimizations.cs" />
     <None Include="0\FixedNetworkOptimizations.cs" />
-    <Compile Include="Utils\GlobalUsings.cs" />
     <Compile Include="Utils\Helper.cs" />
     <None Include="0\InventoryOptimization.cs" />
     <None Include="0\NetSyncClient.cs" />
     <None Include="0\NetSyncServer.cs" />
-    <Compile Include="SteamOptimizations.cs" />
     <Compile Include="VBNetTweaks.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <None Include="App.config" />
+    <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="0Harmony">
@@ -125,6 +129,22 @@
     </Reference>
     <Reference Include="System">
       <HintPath>..\..\..\..\0lib\System.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Buffers, Version=4.0.3.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\packages\System.Buffers.4.5.1\lib\net461\System.Buffers.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Memory">
+      <HintPath>..\..\..\..\0lib\System.Memory.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Numerics" />
+    <Reference Include="System.Numerics.Vectors, Version=4.1.4.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
+      <HintPath>..\packages\System.Numerics.Vectors.4.5.0\lib\net46\System.Numerics.Vectors.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Runtime.CompilerServices.Unsafe, Version=6.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
+      <HintPath>..\packages\System.Runtime.CompilerServices.Unsafe.6.0.0\lib\net461\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Threading.Tasks.Extensions, Version=4.2.0.1, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\packages\System.Threading.Tasks.Extensions.4.5.4\lib\net461\System.Threading.Tasks.Extensions.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine">
       <HintPath>..\..\..\..\0lib\UnityEngine.dll</HintPath>

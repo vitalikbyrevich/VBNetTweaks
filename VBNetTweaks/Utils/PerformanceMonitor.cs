@@ -15,7 +15,7 @@ public static class PerformanceMonitor
 
     public static void Track(string name, Action action)
     {
-        if (!ModConfig.DebugEnabled.Value)
+        if (!VBNetTweaks.DebugEnabled.Value)
         {
             action();
             return;
