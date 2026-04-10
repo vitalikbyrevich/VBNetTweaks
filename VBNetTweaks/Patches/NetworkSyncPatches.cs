@@ -5,7 +5,7 @@
     {
         private const float SmoothPos = 0.22f;      // Быстро догоняет позицию (ваниль 0.2f)
         private const float SmoothRot = 0.45f;      // Быстро выравнивает поворот
-        private const float TeleportThreshold = 5f; // Ванильный порог (резкий скачок только при рассинхроне >5м)
+     //   private const float TeleportThreshold = 5f; // Ванильный порог (резкий скачок только при рассинхроне >5м)
         private const float MicroThreshold = 0.004f;// Фильтр дрожания на месте
         private static bool _loggedSettings;
         
@@ -37,7 +37,7 @@
                     float val = (float)codes[i].operand;
                     if (Mathf.Approximately(val, 0.2f)) codes[i].operand = SmoothPos;
                     else if (Mathf.Approximately(val, 0.5f)) codes[i].operand = SmoothRot;
-                    else if (Mathf.Approximately(val, 5f)) codes[i].operand = TeleportThreshold;
+                //    else if (Mathf.Approximately(val, 5f)) codes[i].operand = TeleportThreshold;
                     else if (Mathf.Approximately(val, 0.001f)) codes[i].operand = MicroThreshold;
                 }
             }
@@ -55,7 +55,7 @@
                 {
                     float val = (float)codes[i].operand;
                     if (Mathf.Approximately(val, 0.2f)) codes[i].operand = SmoothPos;
-                    else if (Mathf.Approximately(val, 5f)) codes[i].operand = TeleportThreshold;
+                  //  else if (Mathf.Approximately(val, 5f)) codes[i].operand = TeleportThreshold;
                     else if (Mathf.Approximately(val, 0.001f)) codes[i].operand = MicroThreshold;
                     else if (Mathf.Approximately(val, 0.01f)) codes[i].operand = 0.005f;
                 }
