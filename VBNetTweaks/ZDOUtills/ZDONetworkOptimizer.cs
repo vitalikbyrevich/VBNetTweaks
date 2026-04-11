@@ -13,13 +13,14 @@
             public static bool CompressionActive { get; private set; }
             public static void RecordZdoSent() => ZdosSent++;
             public static void RecordZdoReceived() => ZdosReceived++;
+
             public static void RecordCompression(int originalSize, int compressedSize)
             {
                 BytesOriginal += originalSize;
                 BytesCompressed += compressedSize;
                 CompressionActive = true;
             }
-    
+
             public static void Reset()
             {
                 ZdosSent = 0;
@@ -28,13 +29,13 @@
                 BytesOriginal = 0;
                 CompressionActive = false;
             }
-            
+
             public static string GetStats()
             {
                 return $"ZDOs Sent/Recv: {ZdosSent}/{ZdosReceived}, Ratio: {AvgCompressionRatio:P1}";
             }
         }
-        
+
         private static readonly int COMPRESSION_VERSION = 1;
 
         private const string RPC_VERSION = "VBNT.CompressionVersion";
@@ -54,6 +55,7 @@
             public bool ReceivingCompressed { get; set; }
             public bool IsCompatible => Version == COMPRESSION_VERSION;
         }
+
         private static float _lastPeerCheck = 0f;
         private const float PEER_CHECK_INTERVAL = 10f;
 
@@ -61,21 +63,21 @@
         {
             if (!VBNetTweaks.ModuleCompression.Value) return;
             if (_compressor == null && VBNetTweaks.ModuleCompression.Value) InitCompressor();
-            
+
             if (ZNet.instance == null) return;
-            
+
             float now = Time.time;
             if (!(now - _lastPeerCheck > PEER_CHECK_INTERVAL)) return;
             _lastPeerCheck = now;
-            
+
             int compatiblePeers = 0;
             int totalPeers = _peerStatus.Count;
-            
+
             foreach (var kvp in _peerStatus)
             {
                 if (kvp.Value.IsCompatible && kvp.Value.ReceivingCompressed) compatiblePeers++;
             }
-            
+
             if (totalPeers > 0 && compatiblePeers == 0 && _compressor != null)
             {
                 Helper.LogVerbose($"[Compression] ⚠️ No compatible peers! Total={totalPeers}, Compressor={_compressor.GetType().Name}");
@@ -85,16 +87,19 @@
                 Helper.LogDebug($"[Compression] Active: {compatiblePeers}/{totalPeers} peers using compression");
             }
         }
-        
+
         public static string GetCompressionStatus()
         {
-            if (_compressor == null) return "NOT INITIALIZED";
-            
             var sb = new System.Text.StringBuilder();
-            sb.AppendLine($"Compressor: {_compressor.GetType().Name}");
-            sb.AppendLine($"Server Mode: {_serverMode}");
-            sb.AppendLine($"Active Peers: {_peerStatus.Count}");
-            
+
+            string activeComp = _compressor != null ? _compressor.GetType().Name.Replace("Compressor", "") : "NONE";
+            sb.AppendLine($" Active Compressor: {activeComp}");
+
+            string configAlgo = VBNetTweaks.m_CompressionAlgorithm?.Value.ToString() ?? "N/A";
+            int configLevel = VBNetTweaks.CompressionLevel?.Value ?? 0;
+            sb.AppendLine($" Config Memory: {configAlgo} (Lvl {configLevel})");
+
+            int peerCount = _peerStatus.Count;
             int compatible = 0, sending = 0, receiving = 0;
             foreach (var status in _peerStatus.Values)
             {
@@ -102,14 +107,20 @@
                 if (status.SendingCompressed) sending++;
                 if (status.ReceivingCompressed) receiving++;
             }
-            
-            sb.AppendLine($"Compatible: {compatible}, Sending: {sending}, Receiving: {receiving}");
-            sb.AppendLine($"Metrics: {NetworkMetrics.ZdosSent} sent, {NetworkMetrics.ZdosReceived} received");
-            sb.AppendLine($"Compression ratio: {NetworkMetrics.AvgCompressionRatio:P1}");
-            
+
+            sb.AppendLine($" Peers: {peerCount} total | {compatible} compatible | {receiving} receiving");
+
+            float interval = VBNetTweaks.SendInterval?.Value ?? 0.05f;
+            int batch = VBNetTweaks.PeersPerUpdate?.Value ?? 30;
+            int queue = VBNetTweaks.ZDOQueueLimit?.Value ?? 10240;
+            sb.AppendLine($" ZDO Settings: Interval={interval:F3}s | Batch={batch} | Queue={queue}");
+
+            sb.AppendLine($" Metrics: {NetworkMetrics.ZdosSent} sent / {NetworkMetrics.ZdosReceived} recv");
+            sb.AppendLine($" Compression Ratio: {NetworkMetrics.AvgCompressionRatio:P1}");
+
             return sb.ToString();
         }
-        
+
         private static void InitCompressor()
         {
             try
@@ -123,7 +134,7 @@
                         _compressor = new DeflateCompressor(level);
                         ZLog.LogWarning($"Using Deflate compressor (level {level})");
                         break;
-                
+
                     case CompressionAlgorithm.Vanilla:
                         _compressor = new VanillaCompressor();
                         ZLog.LogWarning($"Using Vanilla (native) compressor");
@@ -140,9 +151,9 @@
         public static void Initialize()
         {
             if (!VBNetTweaks.ModuleCompression.Value) return;
-    
+
             _serverMode = Helper.IsServer();
-    
+
             if (_serverMode)
             {
                 InitCompressor();
@@ -158,26 +169,91 @@
                 else ZLog.LogWarning("Compression disabled on client");
             }
         }
-    
+
+        private static readonly object _compressorLock = new object();
+
+        public static void ReinitializeCompressor()
+        {
+            lock (_compressorLock)
+            {
+                ZLog.LogWarning("[Compression] ===== REINITIALIZING COMPRESSOR =====");
+
+                // Полностью сбрасываем старый компрессор
+                if (_compressor is IDisposable disposable)
+                {
+                    try
+                    {
+                        disposable.Dispose();
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                _compressor = null;
+
+                // Сбрасываем все статусы пиров
+                var oldStatuses = new Dictionary<ISocket, PeerCompressionStatus>(_peerStatus);
+                _peerStatus.Clear();
+
+                // Пересоздаём компрессор если нужно
+                if (VBNetTweaks.ModuleCompression.Value)
+                {
+                    InitCompressor();
+
+                    // Восстанавливаем пиров с новыми статусами
+                    foreach (var kvp in oldStatuses)
+                    {
+                        var newStatus = new PeerCompressionStatus();
+                        _peerStatus[kvp.Key] = newStatus;
+
+                        // Переотправляем версию компрессии всем существующим пирам
+                        if (ZNet.instance != null)
+                        {
+                            var peer = ZNet.instance.GetPeers().Find(p => p.m_socket == kvp.Key);
+                            if (peer != null)
+                            {
+                                SendCompressionVersion(peer);
+                            }
+                        }
+                    }
+
+                    ZLog.LogWarning($"[Compression] Compressor reinitialized to: {(_compressor?.GetType().Name ?? "NONE")}");
+                }
+                else
+                {
+                    ZLog.LogWarning("[Compression] Compression disabled after reinitialization");
+                }
+            }
+        }
+
+        public static string GetCurrentCompressorType()
+        {
+            if (_compressor == null) return "NONE";
+            string typeName = _compressor.GetType().Name.Replace("Compressor", "");
+            // Возвращаем строку для сравнения с конфигом
+            return typeName.ToLowerInvariant();
+        }
+
         public static bool ShouldCompressSend(ISocket socket)
         {
             if (_serverMode) return _compressor != null;
             if (!_peerStatus.TryGetValue(socket, out var peerStatus)) return false;
             return peerStatus.SendingCompressed && _compressor != null;
         }
-    
+
         public static bool ShouldCompressReceive(ISocket socket)
         {
             if (!_peerStatus.TryGetValue(socket, out var peerStatus)) return false;
             if (!_serverMode && peerStatus.ReceivingCompressed) return true;
             return peerStatus.ReceivingCompressed && _compressor != null;
         }
-        
-        public static byte[] Compress(byte[] data) 
+
+        public static byte[] Compress(byte[] data)
         {
             if (_compressor == null) return data;
-    
-            try 
+
+            try
             {
                 var result = _compressor.Compress(data);
                 NetworkMetrics.RecordCompression(data.Length, result.Length);
@@ -189,12 +265,12 @@
                 return data;
             }
         }
-        
+
         public static byte[] Decompress(byte[] data)
         {
             if (_compressor == null) return data;
-    
-            try 
+
+            try
             {
                 return _compressor.Decompress(data);
             }
@@ -213,14 +289,14 @@
                 if (peerCount <= 0) return;
 
                 zdoManager.m_sendTimer += dt;
-        
+
                 float sendInterval = VBNetTweaks.SendInterval?.Value ?? 0.05f;
                 if (zdoManager.m_sendTimer < sendInterval) return;
 
                 zdoManager.m_sendTimer = 0f;
                 int startPeer = Mathf.Max(zdoManager.m_nextSendPeer, 0);
                 int peersPerUpdate = VBNetTweaks.PeersPerUpdate?.Value ?? 40;
-        
+
                 if (_firstTickLog)
                 {
                     _firstTickLog = false;
@@ -234,12 +310,14 @@
                     var peer = zdoManager.m_peers[peerIndex];
                     if (peer?.m_peer?.m_socket?.IsConnected() != true) continue;
 
-                    PerformanceMonitor.Track("SendZDOs", () => {
+                    PerformanceMonitor.Track("SendZDOs", () =>
+                    {
                         zdoManager.SendZDOs(peer, flush: false);
                         NetworkMetrics.RecordZdoSent();
                     });
                     processed++;
                 }
+
                 zdoManager.m_nextSendPeer = (startPeer + processed) % peerCount;
             }
             catch (Exception ex)
@@ -287,28 +365,28 @@
             peerStatus.PeerEnabled = enabled;
 
             bool shouldCompress = VBNetTweaks.ModuleCompression.Value;
-    
+
             if (!Helper.IsServer())
             {
                 shouldCompress = shouldCompress && VBNetTweaks.EnableClientCompression.Value;
             }
-    
+
             shouldCompress = shouldCompress && enabled && peerStatus.IsCompatible;
-    
+
             SendCompressionStarted(peer, shouldCompress);
         }
-        
+
         private static void SendCompressionStarted(ZNetPeer peer, bool started)
         {
             if (!_peerStatus.TryGetValue(peer.m_socket, out var peerStatus)) return;
-        
+
             if (peerStatus.SendingCompressed == started) return;
 
             peer.m_rpc.Invoke(RPC_STARTED, started);
-    
+
             var socketType = peer.m_socket.GetType();
             var flushMethod = socketType.GetMethod("Flush", Type.EmptyTypes);
-    
+
             if (flushMethod != null && flushMethod.DeclaringType != typeof(object))
             {
                 try
@@ -320,7 +398,7 @@
                     ZLog.LogError($"Error flushing socket: {e.Message}");
                 }
             }
-    
+
             peerStatus.SendingCompressed = started;
             ZLog.LogWarning($"Compression {(started ? "started" : "stopped")} with {GetPeerName(peer)}");
         }
@@ -332,7 +410,7 @@
             peerStatus.ReceivingCompressed = started;
             ZLog.LogWarning($"Receiving {(started ? "compressed" : "uncompressed")} from {GetPeerName(peer)}");
         }
-        
+
         private static string GetPeerName(ZNetPeer peer)
         {
             try
@@ -360,7 +438,7 @@
 
             matcher.SetOperandAndAdvance(AccessTools.Method(typeof(ZDONetworkOptimizer), nameof(OptimizedSendZDOToPeers)));
             return matcher.InstructionEnumeration();
-            
+
         }
 
         [HarmonyPrefix]
@@ -380,18 +458,7 @@
             {
                 return true;
             }
-            
-        }
 
-        [HarmonyPatch(typeof(ZNet), nameof(ZNet.OnNewConnection))]
-        [HarmonyPostfix]
-        static void OnNewConnection(ZNet __instance, ZNetPeer peer)
-        {
-            if (_compressor == null) return;
-
-            _peerStatus[peer.m_socket] = new PeerCompressionStatus();
-            RegisterCompressionRPCs(peer);
-            SendCompressionVersion(peer);
         }
 
         [HarmonyPatch(typeof(ZNet), nameof(ZNet.Disconnect))]
@@ -399,6 +466,15 @@
         static void OnDisconnect(ZNet __instance, ZNetPeer peer)
         {
             _peerStatus.Remove(peer.m_socket);
+        }
+
+        [HarmonyPatch(typeof(ZNet), nameof(ZNet.OnNewConnection))]
+        [HarmonyPostfix]
+        static void OnNewConnection(ZNet __instance, ZNetPeer peer)
+        {
+            _peerStatus[peer.m_socket] = new PeerCompressionStatus();
+            RegisterCompressionRPCs(peer);
+            SendCompressionVersion(peer);
         }
     }
 }
