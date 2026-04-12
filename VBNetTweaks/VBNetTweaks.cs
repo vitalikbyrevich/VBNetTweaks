@@ -43,7 +43,7 @@
             _serverConfig = new ConfigFile(Path.Combine(Paths.ConfigPath, "VitByr/VBNetTweaks/ServerConfig.cfg"), true);
             SynchronizationManager.Instance.RegisterCustomConfig(_serverConfig);
             Instance = this;
-            ModEnabled = _serverConfig.BindConfig("00 - Master", "ModEnabled", true, "Полностью включить/выключить мод VBNetTweaks", synced: true);
+            ModEnabled = _serverConfig.BindConfig("00 - Master", "ModEnabled", true, "Полностью включить/выключить мод VBNetTweaks / Enable/disable the VBNetTweaks mod completely", synced: true);
             if (!ModEnabled.Value) return;
 
             InitClientConfigs();
@@ -94,36 +94,36 @@
         private void InitClientConfigs()
         {
             var debugSection = "01 - Debug";
-            DebugEnabled = Config.Bind(debugSection, "DebugEnabled", false, "Включить отладочный вывод");
-            VerboseLogging = Config.Bind(debugSection, "VerboseLogging", false, "Включить подробное логирование");
+            DebugEnabled = Config.Bind(debugSection, "DebugEnabled", false, "Включить отладочный вывод / Enable debug output");
+            VerboseLogging = Config.Bind(debugSection, "VerboseLogging", false, "Включить подробное логирование / Enable verbose logging");
 
             var modulesSection = "02 - Modules";
-            EnableClientCompression = Config.Bind(modulesSection, "ClientCompression", true, "Сжимать данные на клиенте (может вызывать проблемы с визуальными эффектами)");
+            EnableClientCompression = Config.Bind(modulesSection, "ClientCompression", true, "Сжимать данные на клиенте (может вызывать проблемы с визуальными эффектами) / Compress data on the client (may cause visual issues)");
         }
 
         private void InitServerConfigs()
         {
             var modulesSection = "02 - Modules";
-            ModuleSteamOptimizations = _serverConfig.BindConfig(modulesSection, "SteamOptimizations", true, "Оптимизации Steam сокета", synced: true);
-            ModuleShipSync = _serverConfig.BindConfig(modulesSection, "ShipSync", true, "Синхронизация кораблей", synced: true);
-            ModuleCompression = _serverConfig.BindConfig(modulesSection, "Compression", true, "Сжатие сетевого трафика на сервере", synced: true);
+            ModuleSteamOptimizations = _serverConfig.BindConfig(modulesSection, "SteamOptimizations", true, "Оптимизации Steam сокета / Steam socket optimizations", synced: true);
+            ModuleShipSync = _serverConfig.BindConfig(modulesSection, "ShipSync", true, "Синхронизация кораблей / Synchronization of ships", synced: true);
+            ModuleCompression = _serverConfig.BindConfig(modulesSection, "Compression", true, "Сжатие сетевого трафика на сервере / Network traffic compression on the server", synced: true);
 
             var compressionSection = "03 - Compression Settings";
-            m_CompressionAlgorithm = _serverConfig.BindConfig(compressionSection, "Algorithm", CompressionAlgorithm.Vanilla, "Алгоритм сжатия: Deflate, Vanilla (встроенная компрессия игры)", synced: true);
-            CompressionLevel = _serverConfig.BindConfig(compressionSection, "Level", 3, "Уровень сжатия (1-9 для Deflate)", acceptableValues: new AcceptableValueRange<int>(1, 9), synced: true);
+            m_CompressionAlgorithm = _serverConfig.BindConfig(compressionSection, "Algorithm", CompressionAlgorithm.Vanilla, "Алгоритм сжатия: Deflate, Vanilla (встроенная компрессия игры) / Compression algorithm: Deflate, Vanilla (built-in game compression)", synced: true);
+            CompressionLevel = _serverConfig.BindConfig(compressionSection, "Level", 3, "Уровень сжатия (1-9 для Deflate) / Compression level (1-9 for Deflate)", acceptableValues: new AcceptableValueRange<int>(1, 9), synced: true);
 
             var steamSection = "04 - Steam Settings";
-            SteamSendRateMinKB = _serverConfig.BindConfig(steamSection, "MinRateKB", 256, "Минимальная скорость Steam (vanilla = 150 Kb/s)", synced: true);
-            SteamSendRateMaxKB = _serverConfig.BindConfig(steamSection, "MaxRateKB", 4096, "Максимальная скорость Steam (vanilla = 150 Kb/s)", synced: true);
-            SteamSendBufferSize = _serverConfig.BindConfig(steamSection, "BufferSize", 100_000_000, "Размер буфера Steam  (vanilla = 260000 B)", synced: true);
+            SteamSendRateMinKB = _serverConfig.BindConfig(steamSection, "MinRateKB", 256, "Минимальная скорость Steam (vanilla = 150 Kb/s) / Minimum Steam speed (vanilla = 150 Kbps)", synced: true);
+            SteamSendRateMaxKB = _serverConfig.BindConfig(steamSection, "MaxRateKB", 4096, "Максимальная скорость Steam (vanilla = 150 Kb/s) / Steam Max Speed ​​(vanilla = 150 Kbps)", synced: true);
+            SteamSendBufferSize = _serverConfig.BindConfig(steamSection, "BufferSize", 100_000_000, "Размер буфера Steam  (vanilla = 260000 B) / Steam Buffer Size (vanilla = 260000 B)", synced: true);
 
             var serverSection = "05 - Server Settings";
-            SendInterval = _serverConfig.BindConfig(serverSection, "SendInterval", 0.03f, "Интервал отправки данных (vanilla = 0.05)", acceptableValues: new AcceptableValueRange<float>(0.01f, 0.5f),
+            SendInterval = _serverConfig.BindConfig(serverSection, "SendInterval", 0.03f, "Интервал отправки данных (vanilla = 0.05) / Data sending interval (vanilla = 0.05)", acceptableValues: new AcceptableValueRange<float>(0.01f, 0.5f),
                 synced: true);
 
-            PeersPerUpdate = _serverConfig.BindConfig(serverSection, "PeersPerUpdate", 30, "Количество пиров за один апдейт (vanilla = 1)", acceptableValues: new AcceptableValueRange<int>(1, 200),
+            PeersPerUpdate = _serverConfig.BindConfig(serverSection, "PeersPerUpdate", 30, "Количество пиров за один апдейт (vanilla = 1) / Number of peers per update (vanilla = 1)", acceptableValues: new AcceptableValueRange<int>(1, 200),
                 synced: true);
-            ZDOQueueLimit = _serverConfig.BindConfig(serverSection, "ZDOQueueLimit", 20480, "Размер буфера отправки ZDO пакетов (vanilla = 10240 Kb)", synced: true);
+            ZDOQueueLimit = _serverConfig.BindConfig(serverSection, "ZDOQueueLimit", 20480, "Размер буфера отправки ZDO пакетов (vanilla = 10240 Kb) / ZDO packet sending buffer size (vanilla = 10240 KB)", synced: true);
         }
 
         public ZPackage BuildConfigPackage()
