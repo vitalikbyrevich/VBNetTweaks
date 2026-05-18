@@ -1,19 +1,19 @@
 ﻿namespace VBNetTweaks.Patches
 {
-    [HarmonyPatch(typeof(ZNet), nameof(ZNet.Update))]
+    [HarmonyPatch(typeof(ZNet), "Update")]
     public static class ZNet_Paths
     {
         [HarmonyPostfix]
         public static void Postfix(ZNet __instance)
         {
-            if (!__instance || !ZNet.instance) return;
-        
-            if (VBNetTweaks.ModuleCompression.Value)
+            if (__instance != null && ZNet.instance != null)
             {
-                ZDONetworkOptimizer.CheckAndInitCompression();
+                if (VBNetTweaks.ModuleCompression.Value)
+                {
+                    ZDONetworkOptimizer.Initialize();
+                }
+                PerformanceMonitor.Track("ZNet.Update", delegate { });
             }
-        
-            PerformanceMonitor.Track("ZNet.Update", () => { });
         }
     }
 }

@@ -1,101 +1,157 @@
-﻿namespace VBNetTweaks.Patches;
-
-[HarmonyPatch]
-public static class ZSteamSocket_Patchs
+﻿namespace VBNetTweaks.Patches
 {
-    private static bool _isPatched = false;
-
-    [HarmonyTranspiler]
-    [HarmonyPatch(typeof(ZSteamSocket), nameof(ZSteamSocket.RegisterGlobalCallbacks))]
-    static IEnumerable<CodeInstruction> ZSteamSocket_RegisterGlobalCallbacks_Transpiler(IEnumerable<CodeInstruction> instructions)
+    [HarmonyPatch]
+    public static class ZSteamSocket_Patchs
     {
-        if (_isPatched) return instructions;
+     //   private static bool _steamConfigApplied = false;
+     //   private static float _lastApplyTime = 0f;
+     //   private const float REAPPLY_INTERVAL = 30f;
 
-        ZLog.LogWarning("[VBNetTweaks] Transpiler entered for ZSteamSocket.RegisterGlobalCallbacks");
-
-        var code = new List<CodeInstruction>(instructions);
-        bool found = false;
-
-        for (int i = 0; i < code.Count; i++)
+        [HarmonyTranspiler]
+        [HarmonyPatch(typeof(ZSteamSocket), nameof(ZSteamSocket.RegisterGlobalCallbacks))]
+        static IEnumerable<CodeInstruction> RegisterGlobalCallbacks_Transpiler(IEnumerable<CodeInstruction> instructions)
         {
-            if (code[i].opcode == OpCodes.Ldc_I4 && (int)code[i].operand == 153600)
+            if (!VBNetTweaks.ModuleSteamOptimizations.Value) return instructions;
+
+            var codes = new List<CodeInstruction>(instructions);
+            bool found = false;
+
+            for (int i = 0; i < codes.Count; i++)
             {
-                int newLimit = 50000000; // 50 МБ/с
-                code[i].operand = newLimit;
-                found = true;
-                ZLog.LogWarning($"[VBNetTweaks] Steam transfer rate patched: 153600 -> {newLimit}");
-                break;
-            }
-        }
-
-        if (!found)
-        {
-            ZLog.LogWarning("[VBNetTweaks] WARNING: Steam transfer rate constant 153600 NOT FOUND in IL!");
-        }
-        
-        _isPatched = true;
-        return code;
-    }
-
-    [HarmonyPostfix]
-    [HarmonyPatch(typeof(ZSteamSocket), nameof(ZSteamSocket.RegisterGlobalCallbacks))]
-    static void ZSteamSocket_RegisterGlobalCallbacks_Postfix()
-    {
-        try
-        {
-            ZLog.LogWarning("[VBNetTweaks] Applying Steam Socket Settings via Postfix...");
-
-            var utils = typeof(SteamNetworkingUtils);
-            if (utils == null)
-            {
-                ZLog.LogError("[VBNetTweaks] SteamNetworkingUtils type not found!");
-                return;
-            }
-
-            var setCfg = utils.GetMethod("SetConfigValue", new Type[]
-            {
-                typeof(ESteamNetworkingConfigValue), typeof(ESteamNetworkingConfigScope), typeof(IntPtr), typeof(ESteamNetworkingConfigDataType), typeof(IntPtr)
-            });
-
-            if (setCfg == null)
-            {
-                ZLog.LogError("[VBNetTweaks] SetConfigValue method not found!");
-                return;
-            }
-
-            void SetInt(ESteamNetworkingConfigValue key, int value)
-            {
-                GCHandle h = GCHandle.Alloc(value, GCHandleType.Pinned);
-                try
+                if (codes[i].opcode == OpCodes.Ldc_I4 && (int)codes[i].operand == 153600)
                 {
-                    setCfg.Invoke(null, new object[]
+                    int rate = Math.Max(64, VBNetTweaks.SteamSendRateMaxKB.Value) * 1024;
+                    codes[i].operand = rate;
+                    found = true;
+                    ZLog.LogWarning($"[VBNetTweaks] Steam rate patched: 153600 -> {rate} bytes/s ({VBNetTweaks.SteamSendRateMaxKB.Value}KB/s)");
+                    break;
+                }
+            }
+
+            if (!found) ZLog.LogWarning("[VBNetTweaks] Steam rate constant 153600 not found in IL!");
+
+            return codes;
+        }
+
+    /*    [HarmonyPostfix]
+        [HarmonyPatch(typeof(ZSteamSocket), nameof(ZSteamSocket.RegisterGlobalCallbacks))]
+        static void ApplySteamBuffersViaReflection()
+        {
+            if (!VBNetTweaks.ModuleSteamOptimizations.Value) return;
+
+            if (Time.time - _lastApplyTime < REAPPLY_INTERVAL && _steamConfigApplied) return;
+                
+            _lastApplyTime = Time.time;
+
+            try
+            {
+                ZLog.LogWarning("[VBNetTweaks] Applying Steam buffer settings via reflection...");
+
+                Type utilsType = null;
+                
+                foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    var type = assembly.GetType("Steamworks.SteamNetworkingUtils");
+                    if (type != null)
                     {
-                        key,
-                        ESteamNetworkingConfigScope.k_ESteamNetworkingConfig_Global,
-                        IntPtr.Zero,
-                        ESteamNetworkingConfigDataType.k_ESteamNetworkingConfig_Int32,
-                        h.AddrOfPinnedObject()
-                    });
+                        utilsType = type;
+                        break;
+                    }
+                    
+                    type = assembly.GetType("Steamworks.SteamGameServerNetworkingUtils");
+                    if (type != null)
+                    {
+                        utilsType = type;
+                        break;
+                    }
                 }
-                finally
+
+                if (utilsType == null)
                 {
-                    h.Free();
+                    ZLog.LogWarning("[VBNetTweaks] SteamNetworkingUtils type not found, buffer settings skipped.");
+                    return;
                 }
+
+                var setConfigMethod = utilsType.GetMethod("SetConfigValue", 
+                    BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic,
+                    null,
+                    new Type[] { typeof(int), typeof(int), typeof(IntPtr), typeof(int), typeof(IntPtr) },
+                    null);
+
+                if (setConfigMethod == null)
+                {
+                    ZLog.LogWarning("[VBNetTweaks] SetConfigValue method not found, buffer settings skipped.");
+                    return;
+                }
+
+                Type configValueType = null;
+                Type configScopeType = null;
+                Type configDataType = null;
+                
+                foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    if (configValueType == null) configValueType = assembly.GetType("Steamworks.ESteamNetworkingConfigValue");
+                    if (configScopeType == null) configScopeType = assembly.GetType("Steamworks.ESteamNetworkingConfigScope");
+                    if (configDataType == null) configDataType = assembly.GetType("Steamworks.ESteamNetworkingConfigDataType");
+                    
+                    if (configValueType != null && configScopeType != null && configDataType != null)
+                        break;
+                }
+
+                if (configValueType == null || configScopeType == null || configDataType == null)
+                {
+                    ZLog.LogWarning("[VBNetTweaks] Steam enums not found, buffer settings skipped.");
+                    return;
+                }
+
+                object globalScope = Enum.Parse(configScopeType, "k_ESteamNetworkingConfig_Global");
+                object intDataType = Enum.Parse(configDataType, "k_ESteamNetworkingConfig_Int32");
+
+                void SetConfigValue(string keyName, int value)
+                {
+                    try
+                    {
+                        object enumValue = Enum.Parse(configValueType, keyName);
+                        GCHandle handle = GCHandle.Alloc(value, GCHandleType.Pinned);
+                        try
+                        {
+                            setConfigMethod.Invoke(null, new object[] 
+                            {
+                                (int)enumValue,
+                                (int)globalScope,
+                                IntPtr.Zero,
+                                (int)intDataType,
+                                handle.AddrOfPinnedObject()
+                            });
+                        }
+                        finally
+                        {
+                            handle.Free();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        ZLog.LogWarning($"[VBNetTweaks] Failed to set {keyName}: {ex.Message}");
+                    }
+                }
+
+                int sendBuffer = Math.Max(512 * 1024, VBNetTweaks.SteamSendBufferSizeKB.Value * 1024);
+                SetConfigValue("k_ESteamNetworkingConfig_SendBufferSize", sendBuffer);
+                
+                SetConfigValue("k_ESteamNetworkingConfig_RecvBufferSize", sendBuffer);
+                
+                SetConfigValue("k_ESteamNetworkingConfig_RecvMaxMessageSize", 4 * 1024 * 1024);
+                
+                int minRate = Math.Max(256 * 1024, VBNetTweaks.SteamSendRateMaxKB.Value * 1024 / 2);
+                SetConfigValue("k_ESteamNetworkingConfig_SendRateMin", minRate);
+
+                _steamConfigApplied = true;
+                ZLog.LogWarning($"[VBNetTweaks] Steam buffers applied: SendBuffer={sendBuffer/1024}KB, MinRate={minRate/1024}KB/s");
             }
-
-            int min = Math.Max(64, VBNetTweaks.SteamSendRateMinKB.Value) * 1024;
-            int max = Math.Max(min, VBNetTweaks.SteamSendRateMaxKB.Value) * 1024;
-            int buf = Math.Max(8 * 1024 * 1024, VBNetTweaks.SteamSendBufferSize.Value);
-
-            SetInt(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendRateMin, min);
-            SetInt(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendRateMax, max);
-            SetInt(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendBufferSize, buf);
-
-            ZLog.LogWarning($"[VBNetTweaks] Steam send rates applied: min={min / 1024}KB/s, max={max / 1024}KB/s, buffer={buf / 1024 / 1024}MB");
-        }
-        catch (Exception e)
-        {
-            ZLog.LogError($"[VBNetTweaks] Error applying Steam send rates: {e.Message}\n{e.StackTrace}");
-        }
+            catch (Exception e)
+            {
+                ZLog.LogError($"[VBNetTweaks] Failed to apply Steam buffer settings: {e.Message}");
+            }
+        }*/
     }
 }

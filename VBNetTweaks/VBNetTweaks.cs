@@ -7,10 +7,11 @@
     [BepInIncompatibility("Searica.Valheim.OpenSesame")]
     [BepInIncompatibility("org.bepinex.plugins.network")]
     [BepInIncompatibility("CW_Jesse.BetterNetworking")]
+    [BepInIncompatibility("com.Fire.FiresGhettoNetworkMod")]
     public class VBNetTweaks : BaseUnityPlugin
     {
         private const string ModName = "VBNetTweaks";
-        private const string ModVersion = "0.2.7";
+        private const string ModVersion = "0.3.1";
         private const string ModGUID = "VitByr.VBNetTweaks";
         public static VBNetTweaks Instance { get; private set; }
         public CustomRPC _configSyncRPC;
@@ -21,16 +22,17 @@
         public static ConfigEntry<bool> DebugEnabled;
         public static ConfigEntry<bool> VerboseLogging;
 
-        public static ConfigEntry<bool> ModuleCompression;
-        public static ConfigEntry<bool> EnableClientCompression;
         public static ConfigEntry<bool> ModuleSteamOptimizations;
         public static ConfigEntry<bool> ModuleShipSync;
+        public static ConfigEntry<bool> ModuleCompression;
+     //   public static ConfigEntry<bool> EnableClientCompression;
 
-        public static ConfigEntry<CompressionAlgorithm> m_CompressionAlgorithm;
-        public static ConfigEntry<int> CompressionLevel;
-        public static ConfigEntry<int> SteamSendRateMinKB;
         public static ConfigEntry<int> SteamSendRateMaxKB;
-        public static ConfigEntry<int> SteamSendBufferSize;
+      //  public static ConfigEntry<int> SteamSendBufferSizeKB;
+
+        public static ConfigEntry<int> CompressionLevel;
+        public static ConfigEntry<int> CompressionMinSize;
+        public static ConfigEntry<float> CompressionMinRatio;
 
         public static ConfigEntry<float> SendInterval;
         public static ConfigEntry<int> PeersPerUpdate;
@@ -57,7 +59,6 @@
             _harmony = new Harmony(ModGUID);
 
             StartCoroutine(DelayedInit());
-
             if (ModuleSteamOptimizations.Value)
             {
                 _harmony.PatchAll(typeof(ZSteamSocket_Patchs));
@@ -67,7 +68,6 @@
 
             _harmony.PatchAll(typeof(PlayerCache));
             _harmony.PatchAll(typeof(ZNet_Paths));
-            _harmony.PatchAll(typeof(StatusEffectVFXFix));
             _harmony.PatchAll(typeof(NetworkSyncPatches));
             _harmony.PatchAll(typeof(ZDONetworkOptimizer));
 
@@ -75,19 +75,13 @@
             if (DebugEnabled.Value) Logger.LogInfo("Режим отладки включен");
         }
 
-        private void Update()
-        {
-            if (Time.frameCount % 90 == 0) StatusEffectVFXManager.Maintenance();
-        }
-
         private IEnumerator DelayedInit()
         {
             yield return new WaitForSeconds(2f);
-
             if (ModuleCompression.Value)
             {
                 ZDONetworkOptimizer.Initialize();
-                InvokeRepeating(nameof(Helper.CheckCompressionStatus), 5f, 30f);
+                InvokeRepeating("CheckCompressionStatus", 5f, 30f);
             }
         }
 
@@ -96,9 +90,6 @@
             var debugSection = "01 - Debug";
             DebugEnabled = Config.Bind(debugSection, "DebugEnabled", false, "Включить отладочный вывод");
             VerboseLogging = Config.Bind(debugSection, "VerboseLogging", false, "Включить подробное логирование");
-
-            var modulesSection = "02 - Modules";
-            EnableClientCompression = Config.Bind(modulesSection, "ClientCompression", true, "Сжимать данные на клиенте (может вызывать проблемы с визуальными эффектами)");
         }
 
         private void InitServerConfigs()
@@ -106,23 +97,20 @@
             var modulesSection = "02 - Modules";
             ModuleSteamOptimizations = _serverConfig.BindConfig(modulesSection, "SteamOptimizations", true, "Оптимизации Steam сокета", synced: true);
             ModuleShipSync = _serverConfig.BindConfig(modulesSection, "ShipSync", true, "Синхронизация кораблей", synced: true);
-            ModuleCompression = _serverConfig.BindConfig(modulesSection, "Compression", true, "Сжатие сетевого трафика на сервере", synced: true);
-
-            var compressionSection = "03 - Compression Settings";
-            m_CompressionAlgorithm = _serverConfig.BindConfig(compressionSection, "Algorithm", CompressionAlgorithm.Vanilla, "Алгоритм сжатия: Deflate, Vanilla (встроенная компрессия игры)", synced: true);
-            CompressionLevel = _serverConfig.BindConfig(compressionSection, "Level", 3, "Уровень сжатия (1-9 для Deflate)", acceptableValues: new AcceptableValueRange<int>(1, 9), synced: true);
-
+            ModuleCompression = _serverConfig.BindConfig(modulesSection, "Compression", defaultValue: true, "Сжатие сетевого трафика на сервере");
+ 
             var steamSection = "04 - Steam Settings";
-            SteamSendRateMinKB = _serverConfig.BindConfig(steamSection, "MinRateKB", 256, "Минимальная скорость Steam (vanilla = 150 Kb/s)", synced: true);
-            SteamSendRateMaxKB = _serverConfig.BindConfig(steamSection, "MaxRateKB", 4096, "Максимальная скорость Steam (vanilla = 150 Kb/s)", synced: true);
-            SteamSendBufferSize = _serverConfig.BindConfig(steamSection, "BufferSize", 100_000_000, "Размер буфера Steam  (vanilla = 260000 B)", synced: true);
+            SteamSendRateMaxKB = _serverConfig.BindConfig(steamSection, "MaxRateKB", 4096, "Максимальная скорость отправки Steam (vanilla = 150 KB/s)", acceptableValues: new AcceptableValueRange<int>(256, 10240), synced: true);
+           // SteamSendBufferSizeKB = _serverConfig.BindConfig(steamSection, "SendBufferSizeKB", 2048, "Размер буфера отправки Steam в KB (vanilla = ~260KB). Рекомендуется 1024-4096", acceptableValues: new AcceptableValueRange<int>(512, 8192), synced: true);
 
-            var serverSection = "05 - Server Settings";
-            SendInterval = _serverConfig.BindConfig(serverSection, "SendInterval", 0.03f, "Интервал отправки данных (vanilla = 0.05)", acceptableValues: new AcceptableValueRange<float>(0.01f, 0.5f),
-                synced: true);
-
-            PeersPerUpdate = _serverConfig.BindConfig(serverSection, "PeersPerUpdate", 30, "Количество пиров за один апдейт (vanilla = 1)", acceptableValues: new AcceptableValueRange<int>(1, 200),
-                synced: true);
+            var compress = "05 - Compress Settings";
+            CompressionLevel = _serverConfig.BindConfig(compress, "Level", 3, "Уровень сжатия Deflate: 1 = Fastest, 9 = Smallest", synced: true, null, new AcceptableValueRange<int>(1, 9));
+            CompressionMinSize = _serverConfig.BindConfig(compress, "MinSizeBytes", 1024, "Минимальный размер пакета для сжатия. Пакеты меньше не сжимаются (экономия CPU). Рекомендуется 1024-2048.", synced: true, null, new AcceptableValueRange<int>(64, 8192));
+            CompressionMinRatio = _serverConfig.BindConfig(compress, "MinUsefulRatio", 0.75f, "Минимальный полезный коэффициент сжатия (0.5-1.0). При 0.85 — сжатие применяется только если результат < 85% от оригинала.", synced: true, null, new AcceptableValueRange<float>(0.5f, 1f));
+            
+            var serverSection = "06 - Server Settings";
+            SendInterval = _serverConfig.BindConfig(serverSection, "SendInterval", 0.03f, "Интервал отправки данных (vanilla = 0.05)", acceptableValues: new AcceptableValueRange<float>(0.01f, 0.5f), synced: true);
+            PeersPerUpdate = _serverConfig.BindConfig(serverSection, "PeersPerUpdate", 30, "Количество пиров за один апдейт (vanilla = 1)", acceptableValues: new AcceptableValueRange<int>(1, 200), synced: true);
             ZDOQueueLimit = _serverConfig.BindConfig(serverSection, "ZDOQueueLimit", 20480, "Размер буфера отправки ZDO пакетов (vanilla = 10240 Kb)", synced: true);
         }
 
@@ -136,18 +124,17 @@
                 pkg.Write(ModuleShipSync.Value);
                 pkg.Write(ModuleCompression.Value);
                 pkg.Write(CompressionLevel.Value);
+                pkg.Write(CompressionMinSize.Value);
+                pkg.Write(CompressionMinRatio.Value);
                 pkg.Write(SendInterval.Value);
                 pkg.Write(PeersPerUpdate.Value);
                 pkg.Write(ZDOQueueLimit.Value);
-                pkg.Write(EnableClientCompression.Value);
-                pkg.Write((int)m_CompressionAlgorithm.Value);
             }
             catch (Exception e)
             {
                 Debug.LogError($"[VBNetTweaks] Error building config package: {e.Message}");
                 return new ZPackage();
             }
-
             return pkg;
         }
 
@@ -166,15 +153,27 @@
                 ModEnabled.Value = pkg.ReadBool();
                 ModuleSteamOptimizations.Value = pkg.ReadBool();
                 ModuleShipSync.Value = pkg.ReadBool();
-                ModuleCompression.Value = pkg.ReadBool();
-                CompressionLevel.Value = pkg.ReadInt();
+        
+                // Читаем настройки компрессии (если они есть в пакете)
+                if (pkg.Size() - pkg.GetPos() >= 1)
+                {
+                    ModuleCompression.Value = pkg.ReadBool();
+                }
+                if (pkg.Size() - pkg.GetPos() >= 12) // int + int + float
+                {
+                    CompressionLevel.Value = pkg.ReadInt();
+                    CompressionMinSize.Value = pkg.ReadInt();
+                    CompressionMinRatio.Value = pkg.ReadSingle();
+                }
+        
                 SendInterval.Value = pkg.ReadSingle();
                 PeersPerUpdate.Value = pkg.ReadInt();
                 ZDOQueueLimit.Value = pkg.ReadInt();
-                EnableClientCompression.Value = pkg.ReadBool();
-                m_CompressionAlgorithm.Value = (CompressionAlgorithm)pkg.ReadInt();
                 
-                Debug.Log($"[VBNetTweaks] Server config applied: Algorithm={m_CompressionAlgorithm.Value}, Level={CompressionLevel.Value}");
+                if (ModuleCompression.Value)
+                {
+                    ZDONetworkOptimizer.ReinitializeCompressor();
+                }
             }
             catch (Exception e)
             {
@@ -210,8 +209,6 @@
             _serverConfig.SetSaveOnConfigSet(true);
             _serverConfig.Save();
             
-            ZDONetworkOptimizer.ReinitializeCompressor();
-
             yield break;
         }
 
@@ -230,8 +227,13 @@
         public IEnumerator ApplyServerConfigChanges()
         {
             yield return null;
-
-            
+    
+            if (SendInterval.Value <= 0.001f) SendInterval.Value = 0.03f;
+            if (PeersPerUpdate.Value <= 0) PeersPerUpdate.Value = 30;
+            if (CompressionLevel.Value < 1 || CompressionLevel.Value > 9) CompressionLevel.Value = 3;
+            if (CompressionMinSize.Value < 64) CompressionMinSize.Value = 1024;
+            if (CompressionMinRatio.Value < 0.5f || CompressionMinRatio.Value > 1f) CompressionMinRatio.Value = 0.85f;
+    
             ZPackage pkg = BuildConfigPackage();
             if (pkg.GetArray().Length > 0)
             {
@@ -243,12 +245,11 @@
                 }
                 Logger.LogInfo("[VBNetTweaks] Server config broadcast to all clients");
             }
-            
-            if (SendInterval.Value <= 0.001f) SendInterval.Value = 0.03f;
-            if (PeersPerUpdate.Value <= 0) PeersPerUpdate.Value = 30;
-            if (CompressionLevel.Value < 1 || CompressionLevel.Value > 9) CompressionLevel.Value = 3;
-
-            ZDONetworkOptimizer.ReinitializeCompressor();
+    
+            if (ModuleCompression.Value)
+            {
+                ZDONetworkOptimizer.ReinitializeCompressor();
+            }
         }
 
         private void OnDestroy()

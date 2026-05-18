@@ -91,31 +91,6 @@
             return codes;
         }
         
-        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.SendZDOs))]
-        [HarmonyPrefix]
-        public static void BeforeSendZDOs(ZDOMan.ZDOPeer peer)
-        {
-            if (VBNetTweaks.DebugEnabled.Value && peer?.m_peer?.m_socket != null)
-            {
-                if (Time.frameCount % 600 == 0)
-                {
-                    var status = ZDONetworkOptimizer.GetCompressionStatus();
-                    ZLog.LogWarning($"[Network] Compression status:\n{status}");
-                }
-            }
-        }
-        
-      /*  [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.SendZDOs))]
-        [HarmonyPostfix]
-        public static void SendZDOs_Debug(ZDOMan __instance, ZDOMan.ZDOPeer peer, bool flush)
-        {
-            if (VBNetTweaks.DebugEnabled.Value)
-            {
-                int queueSize = peer.m_peer?.m_socket?.GetSendQueueSize() ?? 0;
-                if (queueSize > 8000) Helper.LogDebug($"[ZDO] Queue spike: {queueSize}B");
-            }
-        }*/
-        
         [HarmonyPatch(typeof(ZSyncTransform), nameof(ZSyncTransform.OwnerSync))]
         [HarmonyTranspiler]
         public static IEnumerable<CodeInstruction> OwnerSync_Transpiler(IEnumerable<CodeInstruction> instructions)
