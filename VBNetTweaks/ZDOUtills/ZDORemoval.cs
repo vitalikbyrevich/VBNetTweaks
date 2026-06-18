@@ -1,64 +1,58 @@
-﻿namespace VBNetTweaks.ZDOUtills
+﻿namespace VBNetTweaks.ZDOUtills;
+
+public static class ZDORemoval
 {
-    public static class ZDORemoval
+    public static void OptimizedRemoveObjects(ZNetScene scene, List<ZDO> near, List<ZDO> distant)
     {
-        public static void OptimizedRemoveObjects(ZNetScene scene, List<ZDO> near, List<ZDO> distant)
+        if (!scene || scene.m_instances == null) return;
+        
+        byte earmark = (byte)(Time.frameCount & 0xFF);
+        
+        if (near != null)
         {
-            if (scene == null) return;
-            
-            // Mark objects that should stay
-            byte earmark = (byte)(Time.frameCount & 0xFF);
-            
-            if (near != null)
+            foreach (ZDO zdo in near)
             {
-                foreach (ZDO zdo in near)
-                {
-                    if (zdo != null) zdo.TempRemoveEarmark = earmark;
-                }
+                if (zdo != null) zdo.TempRemoveEarmark = earmark;
             }
-            
-            if (distant != null)
+        }
+        
+        if (distant != null)
+        {
+            foreach (ZDO zdo in distant)
             {
-                foreach (ZDO zdo in distant)
-                {
-                    if (zdo != null) zdo.TempRemoveEarmark = earmark;
-                }
+                if (zdo != null) zdo.TempRemoveEarmark = earmark;
             }
+        }
+        
+        var instances = scene.m_instances;
+        var tempRemoved = scene.m_tempRemoved;
+        if (tempRemoved == null) return;
+        
+        tempRemoved.Clear();
+        
+        var toRemove = new List<ZNetView>();
+        
+        foreach (var kvp in instances)
+        {
+            ZDO zdo = kvp.Key;
+            ZNetView view = kvp.Value;
             
-            // Find objects to remove
-            var instances = scene.m_instances;
-            var tempRemoved = scene.m_tempRemoved;
-            tempRemoved.Clear();
+            if (zdo != null && view && zdo.TempRemoveEarmark != earmark) toRemove.Add(view);
+        }
+        
+        foreach (ZNetView view in toRemove)
+        {
+            if (!view) continue;
             
-            // Collect keys to avoid modification during iteration
-            var toRemove = new List<ZNetView>();
+            ZDO zdo = view.m_zdo;
+            if (zdo == null) continue;
             
-            foreach (var kvp in instances)
-            {
-                ZDO zdo = kvp.Key;
-                ZNetView view = kvp.Value;
-                
-                if (zdo != null && view != null && zdo.TempRemoveEarmark != earmark)
-                {
-                    toRemove.Add(view);
-                }
-            }
+            view.ResetZDO();
             
-            // Perform removal
-            foreach (ZNetView view in toRemove)
-            {
-                if (view != null)
-                {
-                    ZDO zdo = view.m_zdo;
-                    if (zdo != null)
-                    {
-                        zdo.Created = false;
-                        view.m_zdo = null;
-                    }
-                    UnityEngine.Object.Destroy(view.gameObject);
-                    instances.Remove(zdo);
-                }
-            }
+            ZDO zdoForRemoval = zdo;
+            
+            UnityEngine.Object.Destroy(view.gameObject);
+            instances.Remove(zdoForRemoval);
         }
     }
 }

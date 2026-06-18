@@ -3,66 +3,9 @@
     [HarmonyPatch]
     public static class NetworkSyncPatches
     {
-        private const float SmoothPos = 0.22f;      // Быстро догоняет позицию (ваниль 0.2f)
-        private const float SmoothRot = 0.45f;      // Быстро выравнивает поворот
-     //   private const float TeleportThreshold = 5f; // Ванильный порог (резкий скачок только при рассинхроне >5м)
-        private const float MicroThreshold = 0.004f;// Фильтр дрожания на месте
-        private static bool _loggedSettings;
-        
         private static float _teleportBoostEnd = 0f;
         public static void TriggerTeleportWindow() => _teleportBoostEnd = Time.time + 5f;
         
-        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.Update))]
-        [HarmonyPostfix]
-        static void LogNetworkSettingsOnce()
-        {
-            if (!_loggedSettings && ZNet.instance)
-            {
-                _loggedSettings = true;
-                float interval = VBNetTweaks.SendInterval?.Value ?? 0.05f;
-                int peers = VBNetTweaks.PeersPerUpdate?.Value ?? 20;
-                Helper.LogVerbose($"[VBNetTweaks] Network Config Applied -> SendInterval: {interval:F3}s ({(1f/interval):F1}Hz) | PeersPerUpdate: {peers}");
-            }
-        }
-        
-        [HarmonyPatch(typeof(ZSyncTransform), nameof(ZSyncTransform.SyncPosition))]
-        [HarmonyTranspiler]
-        public static IEnumerable<CodeInstruction> SyncPosition_Transpiler(IEnumerable<CodeInstruction> instructions)
-        {
-            var codes = new List<CodeInstruction>(instructions);
-            for (int i = 0; i < codes.Count; i++)
-            {
-                if (codes[i].opcode == OpCodes.Ldc_R4)
-                {
-                    float val = (float)codes[i].operand;
-                    if (Mathf.Approximately(val, 0.2f)) codes[i].operand = SmoothPos;
-                    else if (Mathf.Approximately(val, 0.5f)) codes[i].operand = SmoothRot;
-                //    else if (Mathf.Approximately(val, 5f)) codes[i].operand = TeleportThreshold;
-                    else if (Mathf.Approximately(val, 0.001f)) codes[i].operand = MicroThreshold;
-                }
-            }
-            return codes;
-        }
-
-        [HarmonyPatch(typeof(ZSyncTransform), nameof(ZSyncTransform.ClientSync))]
-        [HarmonyTranspiler]
-        public static IEnumerable<CodeInstruction> ClientSync_Transpiler(IEnumerable<CodeInstruction> instructions)
-        {
-            var codes = new List<CodeInstruction>(instructions);
-            for (int i = 0; i < codes.Count; i++)
-            {
-                if (codes[i].opcode == OpCodes.Ldc_R4)
-                {
-                    float val = (float)codes[i].operand;
-                    if (Mathf.Approximately(val, 0.2f)) codes[i].operand = SmoothPos;
-                  //  else if (Mathf.Approximately(val, 5f)) codes[i].operand = TeleportThreshold;
-                    else if (Mathf.Approximately(val, 0.001f)) codes[i].operand = MicroThreshold;
-                    else if (Mathf.Approximately(val, 0.01f)) codes[i].operand = 0.005f;
-                }
-            }
-            return codes;
-        }
-
         [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.SendZDOs))]
         [HarmonyTranspiler]
         public static IEnumerable<CodeInstruction> SendZDOs_QueueLimitFix(IEnumerable<CodeInstruction> instructions)
@@ -88,18 +31,6 @@
                 ZLog.LogWarning($"[VBNetTweaks] ZDOQueueLimit patch to: {VBNetTweaks.ZDOQueueLimit.Value}");
             }
 
-            return codes;
-        }
-        
-        [HarmonyPatch(typeof(ZSyncTransform), nameof(ZSyncTransform.OwnerSync))]
-        [HarmonyTranspiler]
-        public static IEnumerable<CodeInstruction> OwnerSync_Transpiler(IEnumerable<CodeInstruction> instructions)
-        {
-            var codes = new List<CodeInstruction>(instructions);
-            for (int i = 0; i < codes.Count; i++)
-            {
-                if (codes[i].opcode == OpCodes.Ldc_R4 && Mathf.Approximately((float)codes[i].operand, 0.001f)) codes[i].operand = MicroThreshold;
-            }
             return codes;
         }
         

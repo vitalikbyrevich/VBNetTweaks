@@ -3,9 +3,28 @@
     [HarmonyPatch]
     public static class ZSteamSocket_Patchs
     {
-     //   private static bool _steamConfigApplied = false;
-     //   private static float _lastApplyTime = 0f;
-     //   private const float REAPPLY_INTERVAL = 30f;
+        private static bool _steamConfigApplied = false;
+        private static bool _steamConfigAttempted = false;
+        
+        private static int _cachedSendBuffer = -1;
+        private static int _cachedMaxRate = -1;
+        
+        private static bool HasSettingsChanged()
+        {
+            if (!_steamConfigAttempted) return true;
+            
+            int currentSendBuffer = VBNetTweaks.SteamSendBufferSizeKB.Value * 1024;
+            int currentMaxRate = VBNetTweaks.SteamSendRateMaxKB.Value * 1024;
+            
+            return currentSendBuffer != _cachedSendBuffer || currentMaxRate != _cachedMaxRate;
+        }
+        
+        private static void UpdateCachedSettings()
+        {
+            _cachedSendBuffer = VBNetTweaks.SteamSendBufferSizeKB.Value * 1024;
+            _cachedMaxRate = VBNetTweaks.SteamSendRateMaxKB.Value * 1024;
+            _steamConfigAttempted = true;
+        }
 
         [HarmonyTranspiler]
         [HarmonyPatch(typeof(ZSteamSocket), nameof(ZSteamSocket.RegisterGlobalCallbacks))]
@@ -33,20 +52,22 @@
             return codes;
         }
 
-    /*    [HarmonyPostfix]
+        [HarmonyPostfix]
         [HarmonyPatch(typeof(ZSteamSocket), nameof(ZSteamSocket.RegisterGlobalCallbacks))]
-        static void ApplySteamBuffersViaReflection()
+        static void ApplySteamBuffersOnce()
         {
             if (!VBNetTweaks.ModuleSteamOptimizations.Value) return;
-
-            if (Time.time - _lastApplyTime < REAPPLY_INTERVAL && _steamConfigApplied) return;
-                
-            _lastApplyTime = Time.time;
+            
+            if (_steamConfigApplied && !HasSettingsChanged())
+            {
+                Helper.LogVerbose("[VBNetTweaks] Steam buffers already applied, settings unchanged - skipping");
+                return;
+            }
+            
+            ZLog.LogWarning("[VBNetTweaks] Applying Steam buffer settings (first time or config changed)...");
 
             try
             {
-                ZLog.LogWarning("[VBNetTweaks] Applying Steam buffer settings via reflection...");
-
                 Type utilsType = null;
                 
                 foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
@@ -69,6 +90,8 @@
                 if (utilsType == null)
                 {
                     ZLog.LogWarning("[VBNetTweaks] SteamNetworkingUtils type not found, buffer settings skipped.");
+                    _steamConfigApplied = true;
+                    UpdateCachedSettings();
                     return;
                 }
 
@@ -81,6 +104,8 @@
                 if (setConfigMethod == null)
                 {
                     ZLog.LogWarning("[VBNetTweaks] SetConfigValue method not found, buffer settings skipped.");
+                    _steamConfigApplied = true;
+                    UpdateCachedSettings();
                     return;
                 }
 
@@ -101,6 +126,8 @@
                 if (configValueType == null || configScopeType == null || configDataType == null)
                 {
                     ZLog.LogWarning("[VBNetTweaks] Steam enums not found, buffer settings skipped.");
+                    _steamConfigApplied = true;
+                    UpdateCachedSettings();
                     return;
                 }
 
@@ -146,12 +173,15 @@
                 SetConfigValue("k_ESteamNetworkingConfig_SendRateMin", minRate);
 
                 _steamConfigApplied = true;
+                UpdateCachedSettings();
                 ZLog.LogWarning($"[VBNetTweaks] Steam buffers applied: SendBuffer={sendBuffer/1024}KB, MinRate={minRate/1024}KB/s");
             }
             catch (Exception e)
             {
                 ZLog.LogError($"[VBNetTweaks] Failed to apply Steam buffer settings: {e.Message}");
+                _steamConfigApplied = true;
+                UpdateCachedSettings();
             }
-        }*/
+        }
     }
 }

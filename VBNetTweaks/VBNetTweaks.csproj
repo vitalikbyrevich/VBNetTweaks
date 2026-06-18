@@ -41,24 +41,34 @@
     <None Include="0\Core\ModConfig.cs" />
     <None Include="0\Core\ModuleInitializer.cs" />
     <None Include="0\Core\NetworkConfigSync.cs" />
+    <None Include="0\ICompressor.cs" />
     <None Include="0\ObjectPool.cs" />
+    <None Include="0\PlayerCache.cs" />
     <None Include="0\PlayerSyncSystem.cs" />
+    <None Include="0\ShipSyncSystem.cs" />
+    <None Include="0\ShipUpdatePatch.cs" />
     <None Include="0\StatusEffectVFXManager.cs" />
-    <Compile Include="CompressionUtills\ICompressor.cs" />
+    <None Include="0\VFXCleanupPatch.cs" />
     <Compile Include="0\PerformanceMonitor.cs" />
     <Compile Include="GlobalUsings.cs" />
     <Compile Include="Patches\NetworkSyncPatches.cs" />
+    <None Include="0\VFXOrphanCleanup.cs" />
+    <Compile Include="Patches\ShipSyncFix.cs" />
     <Compile Include="Patches\ZSteamSocket_Patchs.cs" />
     <Compile Include="Patches\ZNet_Paths.cs" />
-    <Compile Include="ShipSyncSystem.cs" />
     <None Include="0\RpcBatcher.cs" />
     <None Include="0\RpcSerializer.cs" />
     <None Include="0\ZDODeltaSync.cs" />
     <None Include="0\ZDOSorting.cs" />
     <None Include="0\ZoneOwnerManager.cs" />
-    <Compile Include="Utils\PlayerCache.cs" />
+    <None Include="Utils\PacketLogger.cs" />
+    <Compile Include="RPCUtills\RPCPositionContext.cs" />
+    <Compile Include="RPCUtills\RPCSectorHelper.cs" />
+    <Compile Include="RPCUtills\ZRoutedRpcInvokePatch.cs" />
+    <Compile Include="RPCUtills\ZRoutedRpcRegisterPatch.cs" />
+    <Compile Include="RPCUtills\ZRoutedRpcRoutePatch.cs" />
     <Compile Include="ZDOUtills\ZDONetworkOptimizer.cs" />
-    <Compile Include="ZDOUtills\ZDORemoval.cs" />
+    <None Include="ZDOUtills\ZDORemoval.cs" />
     <None Include="0\BufferPool.cs" />
     <None Include="0\ListPool.cs" />
     <None Include="0\UnifiedSceneOptimizations.cs" />
@@ -151,6 +161,9 @@
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
       <HintPath>..\..\..\..\0lib\UnityEngine.CoreModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.ParticleSystemModule">
+      <HintPath>..\..\..\..\0lib\UnityEngine.ParticleSystemModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.PhysicsModule">
       <HintPath>..\..\..\..\0lib\UnityEngine.PhysicsModule.dll</HintPath>

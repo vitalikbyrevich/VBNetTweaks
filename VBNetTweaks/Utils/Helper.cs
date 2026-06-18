@@ -27,11 +27,11 @@ public static class Helper
         if (VBNetTweaks.VerboseLogging.Value) Debug.LogWarning($"[VBNetTweaks] {message}");
     }
 
-    public static void CheckCompressionStatus()
+  /*  public static void CheckCompressionStatus()
     {
         if (VBNetTweaks.ModuleCompression.Value && VBNetTweaks.DebugEnabled.Value)
         {
             ZLog.LogWarning(ZDONetworkOptimizer.GetCompressionStatus());
         }
-    }
+    }*/
 }
