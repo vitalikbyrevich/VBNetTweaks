@@ -9,12 +9,8 @@ public static class RPCSectorHelper
         Vector2i sector1 = ZoneSystem.GetZone(pos1);
         Vector2i sector2 = ZoneSystem.GetZone(pos2);
         
-        return Math.Max(Math.Abs(sector1.x - sector2.x), 
-            Math.Abs(sector1.y - sector2.y));
+        return Math.Max(Math.Abs(sector1.x - sector2.x), Math.Abs(sector1.y - sector2.y));
     }
     
-    public static bool IsInSectorRange(Vector3 origin, Vector3 target, int sectorRadius)
-    {
-        return CalculateSectorDistance(origin, target) <= sectorRadius;
-    }
+    public static bool IsInSectorRange(Vector3 origin, Vector3 target, int sectorRadius) => CalculateSectorDistance(origin, target) <= sectorRadius;
 }

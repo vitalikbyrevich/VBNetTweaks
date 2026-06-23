@@ -15,7 +15,7 @@ namespace VBNetTweaks
     public class VBNetTweaks : BaseUnityPlugin
     {
         private const string ModName = "VBNetTweaks";
-        private const string ModVersion = "0.3.6";
+        private const string ModVersion = "0.3.7";
         private const string ModGUID = "VitByr.VBNetTweaks";
         public static VBNetTweaks Instance { get; private set; }
         public CustomRPC _configSyncRPC;
@@ -72,8 +72,10 @@ namespace VBNetTweaks
             if (ModuleRPCRadiusFiltering.Value)
             {
                 _harmony.PatchAll(typeof(ZRoutedRpcInvokePatch));
-                _harmony.PatchAll(typeof(ZRoutedRpcRoutePatch));
+//                _harmony.PatchAll(typeof(ZRoutedRpcRoutePatch));
                 _harmony.PatchAll(typeof(ZRoutedRpcRegisterPatch));
+                _harmony.PatchAll(typeof(SmartRpcRoutePatch));
+                _harmony.PatchAll(typeof(SmartRpcCleanupPatch));
             }
             
             Logger.LogInfo("VBNetTweaks загружен!");
@@ -99,12 +101,14 @@ namespace VBNetTweaks
             SteamSendBufferSizeKB = _serverConfig.BindConfig(steamSection, "SendBufferSizeKB", 2048, "Размер буфера отправки Steam в KB (vanilla = ~260KB). Рекомендуется 1024-4096", acceptableValues: new AcceptableValueRange<int>(512, 8192), synced: true);
 
             var serverSection = "04 - Server Settings";
-            SendInterval = _serverConfig.BindConfig(serverSection, "SendInterval", 0.04f, "Интервал отправки данных (vanilla = 0.05)", acceptableValues: new AcceptableValueRange<float>(0.01f, 0.5f), synced: true);
+            SendInterval = _serverConfig.BindConfig(serverSection, "SendInterval", 0.03f, "Интервал отправки данных (vanilla = 0.05)", acceptableValues: new AcceptableValueRange<float>(0.01f, 0.5f), synced: true);
             PeersPerUpdate = _serverConfig.BindConfig(serverSection, "PeersPerUpdate", 25, "Количество пиров за один апдейт (vanilla = 1)", acceptableValues: new AcceptableValueRange<int>(1, 200), synced: true);
             ZDOQueueLimit = _serverConfig.BindConfig(serverSection, "ZDOQueueLimit", 30720, "Размер буфера отправки ZDO пакетов (vanilla = 10240 Kb)", synced: true);
             
             var rpcSection = "05 - RPC Filtering";
-            DefaultRPCRadiusSectors = _serverConfig.BindConfig(rpcSection, "DefaultRPCRadiusSectors", 2, "Радиус RPC по умолчанию (в секторах, 1 сектор = 64м)", acceptableValues: new AcceptableValueRange<int>(0, 10), synced: true);
+            DefaultRPCRadiusSectors = _serverConfig.BindConfig(rpcSection, "DefaultRPCRadiusSectors", -1, 
+                "Радиус RPC по умолчанию (в секторах, 1 сектор = 64м).\n" + "-1 = БЕЗ ФИЛЬТРАЦИИ (рекомендуется, чтобы не ломать неизвестные RPC модов)" +
+                "\n" + "0 = только точный сектор\n" + "1 = 128м\n" + "2 = 192м\n" + "3 = 256м\n" + "и т.д. до 10 секторов (640м)", acceptableValues: new AcceptableValueRange<int>(-1, 10), synced: true);
         }
 
         public ZPackage BuildConfigPackage()
