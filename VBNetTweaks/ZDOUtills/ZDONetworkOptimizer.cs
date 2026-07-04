@@ -54,7 +54,10 @@
         
                 zdoManager.m_nextSendPeer = (startPeer + sent) % count;
             }
-            catch (Exception ex) { }
+            catch (Exception ex) 
+            { 
+                Helper.LogDebug($"[VBNetTweaks] Error in OptimizedSendZDOToPeers: {ex}"); 
+            }
         }
 
         [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.RemoveObjects))]

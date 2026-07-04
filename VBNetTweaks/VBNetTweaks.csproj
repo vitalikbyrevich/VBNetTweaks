@@ -54,6 +54,7 @@
     <Compile Include="Patches\NetworkSyncPatches.cs" />
     <None Include="0\VFXOrphanCleanup.cs" />
     <Compile Include="Patches\ShipSyncFix.cs" />
+    <Compile Include="Patches\ShipWaterDamagePatch.cs" />
     <Compile Include="Patches\ZSteamSocket_Patchs.cs" />
     <Compile Include="Patches\ZNet_Paths.cs" />
     <None Include="0\RpcBatcher.cs" />
@@ -63,14 +64,8 @@
     <None Include="0\ZDOSorting.cs" />
     <None Include="0\ZoneOwnerManager.cs" />
     <None Include="Utils\PacketLogger.cs" />
-    <Compile Include="RPCUtills\RPCPositionContext.cs" />
-    <Compile Include="RPCUtills\RPCSectorHelper.cs" />
-    <Compile Include="RPCUtills\SmartRpcCleanupPatch.cs" />
-    <Compile Include="RPCUtills\SmartRpcFilter.cs" />
-    <Compile Include="RPCUtills\SmartRpcRoutePatch.cs" />
-    <Compile Include="RPCUtills\ZRoutedRpcInvokePatch.cs" />
-    <Compile Include="RPCUtills\ZRoutedRpcRegisterPatch.cs" />
-    <None Include="RPCUtills\ZRoutedRpcRoutePatch.cs" />
+    <Compile Include="RPCUtills\RpcFilter.cs" />
+    <Compile Include="ZDOUtills\SmartOwnershipTransfer.cs" />
     <Compile Include="ZDOUtills\ZDONetworkOptimizer.cs" />
     <None Include="0\BufferPool.cs" />
     <None Include="0\ListPool.cs" />

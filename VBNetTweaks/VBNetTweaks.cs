@@ -15,7 +15,7 @@ namespace VBNetTweaks
     public class VBNetTweaks : BaseUnityPlugin
     {
         private const string ModName = "VBNetTweaks";
-        private const string ModVersion = "0.3.7";
+        private const string ModVersion = "0.3.8";
         private const string ModGUID = "VitByr.VBNetTweaks";
         public static VBNetTweaks Instance { get; private set; }
         public CustomRPC _configSyncRPC;
@@ -29,6 +29,7 @@ namespace VBNetTweaks
         public static ConfigEntry<bool> ModuleSteamOptimizations;
         public static ConfigEntry<bool> ModuleShipSync;
         public static ConfigEntry<bool> ModuleRPCRadiusFiltering;
+        public static ConfigEntry<bool> ModuleSmartOwnership;
 
         public static ConfigEntry<int> SteamSendRateMaxKB;
         public static ConfigEntry<int> SteamSendBufferSizeKB;
@@ -36,8 +37,7 @@ namespace VBNetTweaks
         public static ConfigEntry<float> SendInterval;
         public static ConfigEntry<int> PeersPerUpdate;
         public static ConfigEntry<int> ZDOQueueLimit;
-        
-        public static ConfigEntry<int> DefaultRPCRadiusSectors;
+        public static ConfigEntry<float> OwnershipPingThreshold;
 
         private Harmony _harmony;
 
@@ -60,23 +60,18 @@ namespace VBNetTweaks
             _harmony = new Harmony(ModGUID);
 
             if (ModuleSteamOptimizations.Value) _harmony.PatchAll(typeof(ZSteamSocket_Patchs));
+            if (ModuleSmartOwnership.Value) _harmony.PatchAll(typeof(SmartOwnershipTransfer));
             if (ModuleShipSync.Value)
             {
               _harmony.PatchAll(typeof(ShipSyncFix));
+              _harmony.PatchAll(typeof(ShipWaterDamagePatch));
             }
 
             _harmony.PatchAll(typeof(ZNet_Paths));
             _harmony.PatchAll(typeof(NetworkSyncPatches));
             _harmony.PatchAll(typeof(ZDONetworkOptimizer));
             
-            if (ModuleRPCRadiusFiltering.Value)
-            {
-                _harmony.PatchAll(typeof(ZRoutedRpcInvokePatch));
-//                _harmony.PatchAll(typeof(ZRoutedRpcRoutePatch));
-                _harmony.PatchAll(typeof(ZRoutedRpcRegisterPatch));
-                _harmony.PatchAll(typeof(SmartRpcRoutePatch));
-                _harmony.PatchAll(typeof(SmartRpcCleanupPatch));
-            }
+            if (ModuleRPCRadiusFiltering.Value) _harmony.PatchAll(typeof(RpcFilter));
             
             Logger.LogInfo("VBNetTweaks загружен!");
             if (DebugEnabled.Value) Logger.LogInfo("Режим отладки включен");
@@ -95,6 +90,7 @@ namespace VBNetTweaks
             ModuleSteamOptimizations = _serverConfig.BindConfig(modulesSection, "SteamOptimizations", true, "Оптимизации Steam сокета", synced: true);
             ModuleShipSync = _serverConfig.BindConfig(modulesSection, "ShipSync", true, "Синхронизация кораблей", synced: true);
             ModuleRPCRadiusFiltering = _serverConfig.BindConfig(modulesSection, "RPCRadiusFiltering", true, "Включить секторную фильтрацию RPC", synced: true);
+            ModuleSmartOwnership = _serverConfig.BindConfig(modulesSection, "SmartOwnership", true, "Умная передача владения: объекты принадлежат игроку с лучшим пингом", synced: true);
         
             var steamSection = "03 - Steam Settings";
             SteamSendRateMaxKB = _serverConfig.BindConfig(steamSection, "MaxRateKB", 4096, "Максимальная скорость отправки Steam (vanilla = 150 KB/s)", acceptableValues: new AcceptableValueRange<int>(256, 10240), synced: true);
@@ -102,13 +98,9 @@ namespace VBNetTweaks
 
             var serverSection = "04 - Server Settings";
             SendInterval = _serverConfig.BindConfig(serverSection, "SendInterval", 0.03f, "Интервал отправки данных (vanilla = 0.05)", acceptableValues: new AcceptableValueRange<float>(0.01f, 0.5f), synced: true);
-            PeersPerUpdate = _serverConfig.BindConfig(serverSection, "PeersPerUpdate", 25, "Количество пиров за один апдейт (vanilla = 1)", acceptableValues: new AcceptableValueRange<int>(1, 200), synced: true);
+            PeersPerUpdate = _serverConfig.BindConfig(serverSection, "PeersPerUpdate", 50, "Количество пиров за один апдейт (vanilla = 1). Лучше ставить значение равное максимальному количеству слотов сервера.", acceptableValues: new AcceptableValueRange<int>(1, 200), synced: true);
             ZDOQueueLimit = _serverConfig.BindConfig(serverSection, "ZDOQueueLimit", 30720, "Размер буфера отправки ZDO пакетов (vanilla = 10240 Kb)", synced: true);
-            
-            var rpcSection = "05 - RPC Filtering";
-            DefaultRPCRadiusSectors = _serverConfig.BindConfig(rpcSection, "DefaultRPCRadiusSectors", -1, 
-                "Радиус RPC по умолчанию (в секторах, 1 сектор = 64м).\n" + "-1 = БЕЗ ФИЛЬТРАЦИИ (рекомендуется, чтобы не ломать неизвестные RPC модов)" +
-                "\n" + "0 = только точный сектор\n" + "1 = 128м\n" + "2 = 192м\n" + "3 = 256м\n" + "и т.д. до 10 секторов (640м)", acceptableValues: new AcceptableValueRange<int>(-1, 10), synced: true);
+            OwnershipPingThreshold = _serverConfig.BindConfig(serverSection, "OwnershipPingThreshold", 20f, "Разница пинга (в мс), при которой происходит передача владения.\n" + "Если у другого игрока пинг на 20мс меньше - владение передается ему.\n" + "Рекомендуемые значения: 30-80 для стабильных серверов, 100-150 для нестабильных", acceptableValues: new AcceptableValueRange<float>(10f, 300f), synced: true);
         }
 
         public ZPackage BuildConfigPackage()
@@ -127,8 +119,6 @@ namespace VBNetTweaks
                 pkg.Write(SendInterval.Value);
                 pkg.Write(PeersPerUpdate.Value);
                 pkg.Write(ZDOQueueLimit.Value);
-                
-                pkg.Write(DefaultRPCRadiusSectors.Value);
             }
             catch (Exception e)
             {
@@ -161,8 +151,6 @@ namespace VBNetTweaks
                 SendInterval.Value = pkg.ReadSingle();
                 PeersPerUpdate.Value = pkg.ReadInt();
                 ZDOQueueLimit.Value = pkg.ReadInt();
-                
-                DefaultRPCRadiusSectors.Value = pkg.ReadInt();
             }
             catch (Exception e)
             {
