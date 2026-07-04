@@ -15,7 +15,7 @@ namespace VBNetTweaks
     public class VBNetTweaks : BaseUnityPlugin
     {
         private const string ModName = "VBNetTweaks";
-        private const string ModVersion = "0.3.8.1";
+        private const string ModVersion = "0.3.8.2";
         private const string ModGUID = "VitByr.VBNetTweaks";
         public static VBNetTweaks Instance { get; private set; }
         public CustomRPC _configSyncRPC;
@@ -38,6 +38,7 @@ namespace VBNetTweaks
         public static ConfigEntry<int> PeersPerUpdate;
         public static ConfigEntry<int> ZDOQueueLimit;
         public static ConfigEntry<float> OwnershipPingThreshold;
+        public static ConfigEntry<float> OwnershipPingWeight;
 
         private Harmony _harmony;
 
@@ -101,6 +102,7 @@ namespace VBNetTweaks
             PeersPerUpdate = _serverConfig.BindConfig(serverSection, "PeersPerUpdate", 50, "Количество пиров за один апдейт (vanilla = 1). Лучше ставить значение равное максимальному количеству слотов сервера.", acceptableValues: new AcceptableValueRange<int>(1, 200), synced: true);
             ZDOQueueLimit = _serverConfig.BindConfig(serverSection, "ZDOQueueLimit", 30720, "Размер буфера отправки ZDO пакетов (vanilla = 10240 Kb)", synced: true);
             OwnershipPingThreshold = _serverConfig.BindConfig(serverSection, "OwnershipPingThreshold", 20f, "Разница пинга (в мс), при которой происходит передача владения.\n" + "Если у другого игрока пинг на 20мс меньше - владение передается ему.\n" + "Рекомендуемые значения: 30-80 для стабильных серверов, 100-150 для нестабильных", acceptableValues: new AcceptableValueRange<float>(10f, 300f), synced: true);
+            OwnershipPingWeight = _serverConfig.BindConfig(serverSection, "OwnershipPingWeight", 0.5f, "Вес пинга в формуле: 1мс пинга = вес * 1 метр расстояния\n" + "0.3 = расстояние важнее\n" + "0.5 = баланс (рекомендуется)\n" + "1.0 = пинг очень важен", acceptableValues: new AcceptableValueRange<float>(0.1f, 2f), synced: true);
         }
 
         public ZPackage BuildConfigPackage()

@@ -1,242 +1,146 @@
-﻿namespace VBNetTweaks.ZDOUtills
+﻿namespace VBNetTweaks.ZDOUtills;
+
+[HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.ReleaseNearbyZDOS))]
+public static class SmartOwnershipTransfer
 {
-    [HarmonyPatch(typeof(ZDOMan))]
-    public static class SmartOwnershipTransfer
+    private static Dictionary<long, float> _playerPings = new();
+    private static float _lastPingUpdate;
+    private const float PING_CACHE_TIME = 2f;
+
+    [HarmonyPrefix]
+    public static bool Prefix(ZDOMan __instance, Vector3 refPosition, long uid)
     {
-        // Кеш пингов игроков
-        private static Dictionary<long, float> _playerPings = new Dictionary<long, float>();
-        private static float _lastPingUpdate = 0f;
-        private const float PING_UPDATE_INTERVAL = 2f;
+        if (!VBNetTweaks.ModuleSmartOwnership.Value) return true;
+
+        if (__instance.m_tempNearObjects == null || __instance.m_tempNearObjects.Count == 0) return true;
+
+        UpdatePlayerPings();
+
+        long currentUid = uid;
+        float currentPing = GetPlayerPing(currentUid);
         
-        // Порог разницы пинга для передачи владения (в миллисекундах)
-        private static float PingThreshold => VBNetTweaks.OwnershipPingThreshold.Value;
+        // Находим лучшего кандидата
+        long bestOwner = FindBestOwner(__instance, refPosition, currentUid, out float bestScore);
+        float currentScore = CalculateScore(refPosition, currentUid, currentPing);
         
-        // ============================================================
-        // 1. ОСНОВНОЙ ПАТЧ - передача владения с учетом пинга
-        // ============================================================
-        [HarmonyPrefix]
-        [HarmonyPatch(nameof(ZDOMan.ReleaseNearbyZDOS))]
-        static bool Prefix(ZDOMan __instance, Vector3 refPosition, long uid)
+        // Гистерезис: не меняем владельца, если разница незначительна
+        float threshold = VBNetTweaks.OwnershipPingThreshold.Value;
+        if (bestOwner == currentUid || bestScore >= currentScore - threshold * 0.5f) return true;
+
+        // Логируем передачу
+        if (VBNetTweaks.VerboseLogging.Value)
         {
-            if (!VBNetTweaks.ModuleSmartOwnership.Value) 
-                return true; // Пропускаем оригинал
-            
-            if (__instance.m_tempNearObjects.Count == 0) 
-                return true;
-            
-            // Обновляем кеш пингов
-            UpdatePlayerPings();
-            
-            // Получаем пинг текущего игрока
-            float currentPing = GetPlayerPing(uid);
-            
-            // Находим игрока с лучшим пингом в этой области
-            long bestOwner = FindBestOwner(__instance, refPosition, uid, out float bestPing);
-            
-            // Если текущий игрок не лучший - передаем владение лучшему
-            if (bestOwner != 0 && bestOwner != uid && bestPing < currentPing - PingThreshold)
-            {
-                if (VBNetTweaks.VerboseLogging.Value)
-                {
-                    Helper.LogVerbose($"[ZDO Ownership] Transferring ownership: current={uid} ({currentPing}ms) -> best={bestOwner} ({bestPing}ms)");
-                }
-                
-                // Передаем владение лучшему игроку
-                foreach (ZDO tempNearObject in __instance.m_tempNearObjects)
-                {
-                    if (tempNearObject != null && tempNearObject.Persistent)
-                    {
-                        // Проверяем, что объект в зоне лучшего игрока
-                        if (IsObjectInPlayerZone(tempNearObject, bestOwner))
-                        {
-                            tempNearObject.SetOwner(bestOwner);
-                        }
-                    }
-                }
-                
-                // Возвращаем false, чтобы оригинал не выполнялся
-                // (мы уже обработали все объекты)
-                return false;
-            }
-            
-            // Если мы лучший - пропускаем оригинал (он обработает как обычно)
-            return true;
+            float bestPing = GetPlayerPing(bestOwner);
+            Helper.LogVerbose($"[SmartOwnership] Transfer: {currentUid} (ping={currentPing:F0}ms, score={currentScore:F1}) -> {bestOwner} (ping={bestPing:F0}ms, score={bestScore:F1})");
         }
-        
-        // ============================================================
-        // 2. НАХОДИМ ЛУЧШЕГО ВЛАДЕЛЬЦА
-        // ============================================================
-        private static long FindBestOwner(ZDOMan zdoMan, Vector3 refPos, long currentUid, out float bestPing)
+
+        // Передаем владение ВСЕМ объектам в зоне
+        int transferred = 0;
+        foreach (ZDO zdo in __instance.m_tempNearObjects)
         {
-            bestPing = float.MaxValue;
-            long bestOwner = currentUid;
+            if (zdo == null || !zdo.Persistent) continue;
             
-            // Собираем всех игроков в активной зоне
-            HashSet<long> playersInZone = GetPlayersInZone(zdoMan, refPos);
-            
-            foreach (long playerId in playersInZone)
+            // Проверяем, что объект действительно в зоне лучшего игрока
+            // (дополнительная безопасность, хотя bestOwner уже прошел проверку)
+            if (IsObjectInPlayerZone(zdo, bestOwner))
             {
-                float ping = GetPlayerPing(playerId);
-                if (ping < bestPing)
-                {
-                    bestPing = ping;
-                    bestOwner = playerId;
-                }
-            }
-            
-            return bestOwner;
-        }
-        
-        // ============================================================
-        // 3. ПОЛУЧАЕМ ИГРОКОВ В АКТИВНОЙ ЗОНЕ
-        // ============================================================
-        private static HashSet<long> GetPlayersInZone(ZDOMan zdoMan, Vector3 refPos)
-        {
-            HashSet<long> players = new HashSet<long>();
-            players.Add(ZDOMan.GetSessionID()); // Сервер/хост
-            
-            foreach (var peerWrapper in zdoMan.m_peers)
-            {
-                if (peerWrapper?.m_peer == null) continue;
-                if (!peerWrapper.m_peer.IsReady()) continue;
-                
-                // Проверяем, находится ли игрок в активной зоне
-                if (ZNetScene.InActiveArea(ZoneSystem.GetZone(refPos), peerWrapper.m_peer.GetRefPos()))
-                {
-                    players.Add(peerWrapper.m_peer.m_uid);
-                }
-            }
-            
-            return players;
-        }
-        
-        // ============================================================
-        // 4. ПРОВЕРКА, ЧТО ОБЪЕКТ В ЗОНЕ ИГРОКА
-        // ============================================================
-        private static bool IsObjectInPlayerZone(ZDO zdo, long playerId)
-        {
-            if (playerId == ZDOMan.GetSessionID())
-            {
-                return ZNetScene.InActiveArea(zdo.GetSector(), ZNet.instance.GetReferencePosition());
-            }
-            
-            ZNetPeer peer = ZNet.instance.GetPeer(playerId);
-            if (peer == null) return false;
-            
-            return ZNetScene.InActiveArea(zdo.GetSector(), peer.GetRefPos());
-        }
-        
-        // ============================================================
-        // 5. ОБНОВЛЕНИЕ КЕША ПИНГОВ
-        // ============================================================
-        private static void UpdatePlayerPings()
-        {
-            float now = Time.time;
-            if (now - _lastPingUpdate < PING_UPDATE_INTERVAL) 
-                return;
-                
-            _lastPingUpdate = now;
-            _playerPings.Clear();
-            
-            if (ZNet.instance == null) return;
-            
-            // Пинг хоста/сервера
-            _playerPings[ZDOMan.GetSessionID()] = 0f;
-            
-            // Пинги игроков
-            foreach (var peer in ZNet.instance.GetPeers())
-            {
-                if (peer.IsReady())
-                {
-                    _playerPings[peer.m_uid] = peer.m_rpc.GetTimeSinceLastPing();
-                }
+                zdo.SetOwner(bestOwner);
+                transferred++;
             }
         }
-        
-        // ============================================================
-        // 6. ПОЛУЧЕНИЕ ПИНГА ИГРОКА
-        // ============================================================
-        private static float GetPlayerPing(long playerId)
+
+        if (VBNetTweaks.VerboseLogging.Value && transferred > 0)
         {
-            if (_playerPings.TryGetValue(playerId, out float ping))
-                return ping;
-                
-            // Если пинг неизвестен - считаем его плохим (300ms)
-            return 300f;
+            Helper.LogVerbose($"[SmartOwnership] Transferred {transferred}/{__instance.m_tempNearObjects.Count} objects to {bestOwner}");
         }
-        
-        // ============================================================
-        // 7. ПЕРИОДИЧЕСКАЯ ПРОВЕРКА ВЛАДЕНИЯ (для уже существующих объектов)
-        // ============================================================
-        [HarmonyPostfix]
-        [HarmonyPatch(nameof(ZDOMan.Update))]
-        static void Postfix_Update(ZDOMan __instance, float dt)
+
+        return false; // Отменяем ванильную логику
+    }
+
+    private static long FindBestOwner(ZDOMan zdoMan, Vector3 refPos, long currentUid, out float bestScore)
+    {
+        float currentPing = GetPlayerPing(currentUid);
+        bestScore = CalculateScore(refPos, currentUid, currentPing);
+        long bestOwner = currentUid;
+
+        foreach (var peerWrapper in zdoMan.m_peers)
         {
-            if (!VBNetTweaks.ModuleSmartOwnership.Value) 
-                return;
-                
-            // Проверяем владение каждые 10 секунд
-            if (Time.frameCount % 600 != 0) 
-                return;
-                
-            // Перепроверяем владение для всех объектов
-            RecheckOwnership(__instance);
-        }
-        
-        private static void RecheckOwnership(ZDOMan zdoMan)
-        {
-            UpdatePlayerPings();
+            if (peerWrapper?.m_peer == null || !peerWrapper.m_peer.IsReady()) continue;
             
-            foreach (var kvp in zdoMan.m_objectsByID)
+            long playerId = peerWrapper.m_peer.m_uid;
+            if (playerId == currentUid) continue;
+
+            // Проверяем, что игрок в активной зоне
+            if (!ZNetScene.InActiveArea(ZoneSystem.GetZone(refPos), peerWrapper.m_peer.GetRefPos())) continue;
+
+            float ping = GetPlayerPing(playerId);
+            float score = CalculateScore(refPos, playerId, ping);
+
+            if (score < bestScore)
             {
-                ZDO zdo = kvp.Value;
-                if (zdo == null || !zdo.Persistent) 
-                    continue;
-                    
-                long currentOwner = zdo.GetOwner();
-                if (currentOwner == 0) 
-                    continue;
-                    
-                // Проверяем, есть ли игрок с лучшим пингом в зоне
-                Vector2i sector = zdo.GetSector();
-                long bestOwner = FindBestOwnerInSector(zdoMan, sector, currentOwner, out float bestPing);
-                float currentPing = GetPlayerPing(currentOwner);
-                
-                if (bestOwner != 0 && bestOwner != currentOwner && bestPing < currentPing - PingThreshold)
-                {
-                    if (VBNetTweaks.VerboseLogging.Value)
-                    {
-                        Helper.LogVerbose($"[ZDO Ownership] Recheck: {zdo.m_uid} owner {currentOwner} ({currentPing}ms) -> {bestOwner} ({bestPing}ms)");
-                    }
-                    zdo.SetOwner(bestOwner);
-                }
+                bestScore = score;
+                bestOwner = playerId;
             }
         }
+
+        return bestOwner;
+    }
+
+    private static float CalculateScore(Vector3 refPos, long playerId, float ping)
+    {
+        Vector3 playerPos = GetPlayerPosition(playerId);
+        if (playerPos == Vector3.zero) return float.MaxValue;
+            
+        float distance = Vector3.Distance(refPos, playerPos);
+        float pingWeight = VBNetTweaks.OwnershipPingWeight.Value;
         
-        private static long FindBestOwnerInSector(ZDOMan zdoMan, Vector2i sector, long currentOwner, out float bestPing)
+        return distance + (ping * pingWeight);
+    }
+
+    private static Vector3 GetPlayerPosition(long playerId)
+    {
+        if (playerId == ZDOMan.GetSessionID()) return ZNet.instance?.GetReferencePosition() ?? Vector3.zero;
+            
+        ZNetPeer peer = ZNet.instance?.GetPeer(playerId);
+        return peer?.GetRefPos() ?? Vector3.zero;
+    }
+
+    private static bool IsObjectInPlayerZone(ZDO zdo, long playerId)
+    {
+        Vector3 playerPos = GetPlayerPosition(playerId);
+        if (playerPos == Vector3.zero) return false;
+            
+        return ZNetScene.InActiveArea(zdo.GetSector(), playerPos);
+    }
+
+    private static void UpdatePlayerPings()
+    {
+        float now = Time.time;
+        if (now - _lastPingUpdate < PING_CACHE_TIME) return;
+        
+        _lastPingUpdate = now;
+        _playerPings.Clear();
+        
+        _playerPings[ZDOMan.GetSessionID()] = 0f;
+
+        if (ZNet.instance == null) return;
+
+        foreach (var peer in ZNet.instance.GetPeers())
         {
-            bestPing = GetPlayerPing(currentOwner);
-            long bestOwner = currentOwner;
-            
-            foreach (var peerWrapper in zdoMan.m_peers)
-            {
-                if (peerWrapper?.m_peer == null) continue;
-                if (!peerWrapper.m_peer.IsReady()) continue;
-                
-                long playerId = peerWrapper.m_peer.m_uid;
-                
-                if (ZNetScene.InActiveArea(sector, peerWrapper.m_peer.GetRefPos()))
-                {
-                    float ping = GetPlayerPing(playerId);
-                    if (ping < bestPing)
-                    {
-                        bestPing = ping;
-                        bestOwner = playerId;
-                    }
-                }
-            }
-            
-            return bestOwner;
+            if (peer.IsReady()) _playerPings[peer.m_uid] = peer.m_rpc.GetTimeSinceLastPing();
         }
+        
+        if (VBNetTweaks.VerboseLogging.Value)
+        {
+            foreach (var kvp in _playerPings)
+            {
+                Helper.LogVerbose($"[SmartOwnership] Player {kvp.Key}: {kvp.Value:F0}ms");
+            }
+        }
+    }
+
+    private static float GetPlayerPing(long playerId)
+    {
+        return _playerPings.TryGetValue(playerId, out float ping) ? ping : 300f;
     }
 }
