@@ -15,7 +15,7 @@ namespace VBNetTweaks
     public class VBNetTweaks : BaseUnityPlugin
     {
         private const string ModName = "VBNetTweaks";
-        private const string ModVersion = "0.3.8";
+        private const string ModVersion = "0.3.8.1";
         private const string ModGUID = "VitByr.VBNetTweaks";
         public static VBNetTweaks Instance { get; private set; }
         public CustomRPC _configSyncRPC;
@@ -112,6 +112,7 @@ namespace VBNetTweaks
                 pkg.Write(ModuleSteamOptimizations.Value);
                 pkg.Write(ModuleShipSync.Value);
                 pkg.Write(ModuleRPCRadiusFiltering.Value);
+                pkg.Write(ModuleSmartOwnership.Value);
                 
                 pkg.Write(SteamSendRateMaxKB.Value);
                 pkg.Write(SteamSendBufferSizeKB.Value);
@@ -119,6 +120,7 @@ namespace VBNetTweaks
                 pkg.Write(SendInterval.Value);
                 pkg.Write(PeersPerUpdate.Value);
                 pkg.Write(ZDOQueueLimit.Value);
+                pkg.Write(OwnershipPingThreshold.Value);
             }
             catch (Exception e)
             {
@@ -144,6 +146,7 @@ namespace VBNetTweaks
                 ModuleSteamOptimizations.Value = pkg.ReadBool();
                 ModuleShipSync.Value = pkg.ReadBool();
                 ModuleRPCRadiusFiltering.Value = pkg.ReadBool();
+                ModuleSmartOwnership.Value = pkg.ReadBool();
         
                 SteamSendRateMaxKB.Value = pkg.ReadInt();
                 SteamSendBufferSizeKB.Value = pkg.ReadInt();
@@ -151,6 +154,7 @@ namespace VBNetTweaks
                 SendInterval.Value = pkg.ReadSingle();
                 PeersPerUpdate.Value = pkg.ReadInt();
                 ZDOQueueLimit.Value = pkg.ReadInt();
+                OwnershipPingThreshold.Value = pkg.ReadInt();
             }
             catch (Exception e)
             {

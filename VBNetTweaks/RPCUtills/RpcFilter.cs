@@ -38,8 +38,64 @@ namespace VBNetTweaks.RPCUtills
             {
                 _rangeLimitedMethodHashes = new int[]
                 {
+                    // Character
                     "Step".GetStableHashCode(),
                     "RPC_DamageText".GetStableHashCode(),
+                    "RPC_Heal".GetStableHashCode(),
+                    "RPC_Stagger".GetStableHashCode(),
+                    "RPC_AddNoise".GetStableHashCode(),
+                    "RPC_OnTargeted".GetStableHashCode(),
+                    "RPC_OnDeath".GetStableHashCode(),
+                    "RPC_UseStamina".GetStableHashCode(),
+                    "RPC_UseEitr".GetStableHashCode(),
+                    "RPC_Emote".GetStableHashCode(),
+                    // MonsterAI
+                    "RPC_Wakeup".GetStableHashCode(),
+                    "RPC_Sleep".GetStableHashCode(),
+                    "RPC_OnNearProjectileHit".GetStableHashCode(),
+                    // Ship
+                    "Rudder".GetStableHashCode(),
+                    "RequestControl".GetStableHashCode(),
+                    "ReleaseControl".GetStableHashCode(),
+                    // Destructible, MineRock5, TreeLog, TreeBase, WearNTear
+                    "RPC_Damage".GetStableHashCode(),
+                    // Destructible, WearNTear
+                    "RPC_CreateFragments".GetStableHashCode(),
+                    // MineRock5
+                    "RPC_SetAreaHealth".GetStableHashCode(),
+                    // MineRock
+                    "Hit".GetStableHashCode(),
+                    "Hide".GetStableHashCode(),
+                    // TreeBase
+                    "RPC_Grow".GetStableHashCode(),
+                    "RPC_Shake".GetStableHashCode(),
+                    // WearNTear
+                    "RPC_Remove".GetStableHashCode(),
+                    "RPC_Repair".GetStableHashCode(),
+                    "RPC_HealthChanged".GetStableHashCode(),
+                    "RPC_ClearCachedSupport".GetStableHashCode(),
+                    // Pickable
+                    "RPC_SetPicked".GetStableHashCode(),
+                    "RPC_Pick".GetStableHashCode(),
+                    // Tameable
+                    "Command".GetStableHashCode(),
+                    "SetName".GetStableHashCode(),
+                    "RPC_UnSummon".GetStableHashCode(),
+                    "AddSaddle".GetStableHashCode(),
+                    "SetSaddle".GetStableHashCode(),
+                    // Fireplace, CookingStation
+                    "RPC_AddFuel".GetStableHashCode(),
+                    "RPC_AddFuelAmount".GetStableHashCode(),
+                    "RPC_SetFuelAmount".GetStableHashCode(),
+                    "RPC_ToggleOn".GetStableHashCode(),
+                    // CookingStation
+                    "RPC_RemoveDoneItem".GetStableHashCode(),
+                    "RPC_AddItem".GetStableHashCode(),
+                    "RPC_SetSlotVisual".GetStableHashCode(),
+                    // Catapult
+                    "RPC_Shoot".GetStableHashCode(),
+                    "RPC_OnLegUse".GetStableHashCode(),
+                    "RPC_SetLoadedVisual".GetStableHashCode(),
                 };
             }
 
@@ -51,8 +107,8 @@ namespace VBNetTweaks.RPCUtills
         {
             if (Character.InInterior(a) != Character.InInterior(b)) return false;
 
-            int radius = ZoneSystem.instance.m_activeArea + ZoneSystem.instance.m_activeDistantArea;
-            float zoneSize = ZoneSystem.instance.m_zoneSize;
+            int radius = ZoneSystem.instance.m_activeArea + ZoneSystem.instance.m_activeDistantArea; // 3+3
+            float zoneSize = ZoneSystem.instance.m_zoneSize; // 64м
             float halfZone = zoneSize / 2f;
             float threshold = (radius + 1) * zoneSize + halfZone;
 
