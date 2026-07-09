@@ -47,6 +47,7 @@
     <None Include="0\PlayerSyncSystem.cs" />
     <None Include="0\ShipSyncSystem.cs" />
     <None Include="0\ShipUpdatePatch.cs" />
+    <None Include="0\SmartOwnershipTransfer.cs" />
     <None Include="0\StatusEffectVFXManager.cs" />
     <None Include="0\VFXCleanupPatch.cs" />
     <Compile Include="0\PerformanceMonitor.cs" />
@@ -65,7 +66,6 @@
     <None Include="0\ZoneOwnerManager.cs" />
     <None Include="Utils\PacketLogger.cs" />
     <Compile Include="RPCUtills\RpcFilter.cs" />
-    <Compile Include="ZDOUtills\SmartOwnershipTransfer.cs" />
     <Compile Include="ZDOUtills\ZDONetworkOptimizer.cs" />
     <None Include="0\BufferPool.cs" />
     <None Include="0\ListPool.cs" />

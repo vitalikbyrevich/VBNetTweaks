@@ -15,7 +15,7 @@ namespace VBNetTweaks
     public class VBNetTweaks : BaseUnityPlugin
     {
         private const string ModName = "VBNetTweaks";
-        private const string ModVersion = "0.3.8.2";
+        private const string ModVersion = "0.3.8.3";
         private const string ModGUID = "VitByr.VBNetTweaks";
         public static VBNetTweaks Instance { get; private set; }
         public CustomRPC _configSyncRPC;
@@ -29,7 +29,6 @@ namespace VBNetTweaks
         public static ConfigEntry<bool> ModuleSteamOptimizations;
         public static ConfigEntry<bool> ModuleShipSync;
         public static ConfigEntry<bool> ModuleRPCRadiusFiltering;
-        public static ConfigEntry<bool> ModuleSmartOwnership;
 
         public static ConfigEntry<int> SteamSendRateMaxKB;
         public static ConfigEntry<int> SteamSendBufferSizeKB;
@@ -37,9 +36,7 @@ namespace VBNetTweaks
         public static ConfigEntry<float> SendInterval;
         public static ConfigEntry<int> PeersPerUpdate;
         public static ConfigEntry<int> ZDOQueueLimit;
-        public static ConfigEntry<float> OwnershipPingThreshold;
-        public static ConfigEntry<float> OwnershipPingWeight;
-
+      
         private Harmony _harmony;
 
         private void Awake()
@@ -61,7 +58,6 @@ namespace VBNetTweaks
             _harmony = new Harmony(ModGUID);
 
             if (ModuleSteamOptimizations.Value) _harmony.PatchAll(typeof(ZSteamSocket_Patchs));
-            if (ModuleSmartOwnership.Value) _harmony.PatchAll(typeof(SmartOwnershipTransfer));
             if (ModuleShipSync.Value)
             {
               _harmony.PatchAll(typeof(ShipSyncFix));
@@ -91,7 +87,6 @@ namespace VBNetTweaks
             ModuleSteamOptimizations = _serverConfig.BindConfig(modulesSection, "SteamOptimizations", true, "Оптимизации Steam сокета", synced: true);
             ModuleShipSync = _serverConfig.BindConfig(modulesSection, "ShipSync", true, "Синхронизация кораблей", synced: true);
             ModuleRPCRadiusFiltering = _serverConfig.BindConfig(modulesSection, "RPCRadiusFiltering", true, "Включить секторную фильтрацию RPC", synced: true);
-            ModuleSmartOwnership = _serverConfig.BindConfig(modulesSection, "SmartOwnership", true, "Умная передача владения: объекты принадлежат игроку с лучшим пингом", synced: true);
         
             var steamSection = "03 - Steam Settings";
             SteamSendRateMaxKB = _serverConfig.BindConfig(steamSection, "MaxRateKB", 4096, "Максимальная скорость отправки Steam (vanilla = 150 KB/s)", acceptableValues: new AcceptableValueRange<int>(256, 10240), synced: true);
@@ -101,9 +96,7 @@ namespace VBNetTweaks
             SendInterval = _serverConfig.BindConfig(serverSection, "SendInterval", 0.03f, "Интервал отправки данных (vanilla = 0.05)", acceptableValues: new AcceptableValueRange<float>(0.01f, 0.5f), synced: true);
             PeersPerUpdate = _serverConfig.BindConfig(serverSection, "PeersPerUpdate", 50, "Количество пиров за один апдейт (vanilla = 1). Лучше ставить значение равное максимальному количеству слотов сервера.", acceptableValues: new AcceptableValueRange<int>(1, 200), synced: true);
             ZDOQueueLimit = _serverConfig.BindConfig(serverSection, "ZDOQueueLimit", 30720, "Размер буфера отправки ZDO пакетов (vanilla = 10240 Kb)", synced: true);
-            OwnershipPingThreshold = _serverConfig.BindConfig(serverSection, "OwnershipPingThreshold", 20f, "Разница пинга (в мс), при которой происходит передача владения.\n" + "Если у другого игрока пинг на 20мс меньше - владение передается ему.\n" + "Рекомендуемые значения: 30-80 для стабильных серверов, 100-150 для нестабильных", acceptableValues: new AcceptableValueRange<float>(10f, 300f), synced: true);
-            OwnershipPingWeight = _serverConfig.BindConfig(serverSection, "OwnershipPingWeight", 0.5f, "Вес пинга в формуле: 1мс пинга = вес * 1 метр расстояния\n" + "0.3 = расстояние важнее\n" + "0.5 = баланс (рекомендуется)\n" + "1.0 = пинг очень важен", acceptableValues: new AcceptableValueRange<float>(0.1f, 2f), synced: true);
-        }
+     }
 
         public ZPackage BuildConfigPackage()
         {
@@ -114,7 +107,6 @@ namespace VBNetTweaks
                 pkg.Write(ModuleSteamOptimizations.Value);
                 pkg.Write(ModuleShipSync.Value);
                 pkg.Write(ModuleRPCRadiusFiltering.Value);
-                pkg.Write(ModuleSmartOwnership.Value);
                 
                 pkg.Write(SteamSendRateMaxKB.Value);
                 pkg.Write(SteamSendBufferSizeKB.Value);
@@ -122,7 +114,6 @@ namespace VBNetTweaks
                 pkg.Write(SendInterval.Value);
                 pkg.Write(PeersPerUpdate.Value);
                 pkg.Write(ZDOQueueLimit.Value);
-                pkg.Write(OwnershipPingThreshold.Value);
             }
             catch (Exception e)
             {
@@ -148,7 +139,6 @@ namespace VBNetTweaks
                 ModuleSteamOptimizations.Value = pkg.ReadBool();
                 ModuleShipSync.Value = pkg.ReadBool();
                 ModuleRPCRadiusFiltering.Value = pkg.ReadBool();
-                ModuleSmartOwnership.Value = pkg.ReadBool();
         
                 SteamSendRateMaxKB.Value = pkg.ReadInt();
                 SteamSendBufferSizeKB.Value = pkg.ReadInt();
@@ -156,7 +146,6 @@ namespace VBNetTweaks
                 SendInterval.Value = pkg.ReadSingle();
                 PeersPerUpdate.Value = pkg.ReadInt();
                 ZDOQueueLimit.Value = pkg.ReadInt();
-                OwnershipPingThreshold.Value = pkg.ReadInt();
             }
             catch (Exception e)
             {
