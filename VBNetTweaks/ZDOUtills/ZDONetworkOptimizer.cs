@@ -20,38 +20,42 @@
             {
                 int count = zdoManager.m_peers.Count;
                 if (count <= 0) return;
-        
+
                 zdoManager.m_sendTimer += dt;
                 float interval = VBNetTweaks.SendInterval.Value;
-        
+
                 if (zdoManager.m_sendTimer < interval) return;
-        
+
                 zdoManager.m_sendTimer = 0f;
                 int startPeer = Math.Max(zdoManager.m_nextSendPeer, 0);
                 int peersPerUpdate = VBNetTweaks.PeersPerUpdate.Value;
+                int queueLimit = VBNetTweaks.ZDOQueueLimit.Value;
+        
+                float flushThresholdPercent = VBNetTweaks.FlushThresholdPercent.Value;
+                int flushThreshold = Mathf.RoundToInt(queueLimit * flushThresholdPercent);
         
                 int sent = 0;
                 for (int i = 0; i < Math.Min(peersPerUpdate, count); i++)
                 {
                     int idx = (startPeer + i) % count;
                     var peer = zdoManager.m_peers[idx];
-            
+
                     if (peer?.m_peer?.m_socket?.IsConnected() != true) continue;
-            
+
                     int queueSize = peer.m_peer.m_socket.GetSendQueueSize();
-            
-                    if (queueSize > VBNetTweaks.ZDOQueueLimit.Value)
+
+                    if (queueSize > queueLimit)
                     {
                         sent++;
                         continue;
                     }
-            
-                    bool flush = queueSize <= 10240;
+
+                    bool flush = queueSize <= flushThreshold;
             
                     zdoManager.SendZDOs(peer, flush: flush);
                     sent++;
                 }
-        
+
                 zdoManager.m_nextSendPeer = (startPeer + sent) % count;
             }
             catch (Exception ex) 
