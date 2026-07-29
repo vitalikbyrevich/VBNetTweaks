@@ -3,17 +3,19 @@
     [HarmonyPatch]
     public static class ZDONetworkOptimizer
     {
+        private static readonly int PLAYER_PREFAB = "Player".GetStableHashCode();
+        private static readonly int HASH_AI = "ai".GetStableHashCode();
+
         [HarmonyTranspiler]
         [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.Update))]
         private static IEnumerable<CodeInstruction> ZDOManUpdateTranspiler(IEnumerable<CodeInstruction> instructions)
         {
             var matcher = new CodeMatcher(instructions).Start();
             matcher.MatchStartForward(new CodeMatch(OpCodes.Call, AccessTools.Method(typeof(ZDOMan), nameof(ZDOMan.SendZDOToPeers2))));
-
-            matcher.SetOperandAndAdvance(AccessTools.Method(typeof(ZDONetworkOptimizer), nameof(ZDONetworkOptimizer.OptimizedSendZDOToPeers)));
+            matcher.SetOperandAndAdvance(AccessTools.Method(typeof(ZDONetworkOptimizer), nameof(OptimizedSendZDOToPeers)));
             return matcher.InstructionEnumeration();
         }
-        
+
         public static void OptimizedSendZDOToPeers(ZDOMan zdoManager, float dt)
         {
             try
@@ -23,39 +25,37 @@
 
                 zdoManager.m_sendTimer += dt;
                 float interval = VBNetTweaks.SendInterval.Value;
-
+                
                 if (zdoManager.m_sendTimer < interval) return;
-
                 zdoManager.m_sendTimer = 0f;
+
                 int startPeer = Math.Max(zdoManager.m_nextSendPeer, 0);
                 int peersPerUpdate = VBNetTweaks.PeersPerUpdate.Value;
                 int queueLimit = VBNetTweaks.ZDOQueueLimit.Value;
-        
+                
                 float flushThresholdPercent = VBNetTweaks.FlushThresholdPercent.Value;
                 int flushThreshold = Mathf.RoundToInt(queueLimit * flushThresholdPercent);
-        
+
                 int sent = 0;
                 for (int i = 0; i < Math.Min(peersPerUpdate, count); i++)
                 {
                     int idx = (startPeer + i) % count;
                     var peer = zdoManager.m_peers[idx];
-
                     if (peer?.m_peer?.m_socket?.IsConnected() != true) continue;
 
                     int queueSize = peer.m_peer.m_socket.GetSendQueueSize();
-
+                    
                     if (queueSize > queueLimit)
                     {
                         sent++;
                         continue;
                     }
 
-                    bool flush = queueSize <= flushThreshold;
-            
+                    bool flush = queueSize <= flushThreshold; 
+                    
                     zdoManager.SendZDOs(peer, flush: flush);
                     sent++;
                 }
-
                 zdoManager.m_nextSendPeer = (startPeer + sent) % count;
             }
             catch (Exception ex) 
@@ -63,32 +63,33 @@
                 Helper.LogDebug($"[VBNetTweaks] Error in OptimizedSendZDOToPeers: {ex}"); 
             }
         }
-
-        [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.RemoveObjects))]
-        public static class SafeRemoveObjectsPatch
+        
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.ServerSortSendZDOS))]
+        public static void ApplyWeights(List<ZDO> objects, Vector3 refPos)
         {
-            static bool Prefix(ZNetScene __instance, List<ZDO> currentNearObjects, List<ZDO> currentDistantObjects)
+            if (!ZNet.instance.IsServer()) return;
+
+            foreach (var zdo in objects)
             {
-                if (!VBNetTweaks.ModuleSteamOptimizations.Value) return true;
+                if (zdo == null) continue;
 
-                byte mark = (byte)(Time.frameCount & 255);
+                int prefab = zdo.GetPrefab();
 
-                if (currentNearObjects != null)
-                    foreach (var z in currentNearObjects)
-                        if (z != null) z.TempRemoveEarmark = mark;
-
-                if (currentDistantObjects != null)
-                    foreach (var z in currentDistantObjects)
-                        if (z != null) z.TempRemoveEarmark = mark;
-
-                __instance.m_tempRemoved.Clear();
-                foreach (var kvp in __instance.m_instances)
+                if (prefab == PLAYER_PREFAB)
                 {
-                    if (kvp.Key == null || !kvp.Value) continue;
-                    if (kvp.Key.TempRemoveEarmark != mark) __instance.m_tempRemoved.Add(kvp.Value);
+                    zdo.m_tempSortValue -= 500f;
+                    continue;
                 }
-                
-                return true;
+
+                if (zdo.GetInt(HASH_AI, -1) != -1)
+                {
+                    // Чем ближе моб к игроку, тем выше приоритет
+                    float dist = Vector3.Distance(zdo.GetPosition(), refPos);
+                    if (dist < 40f) zdo.m_tempSortValue -= 300f;
+                    else if (dist < 80f) zdo.m_tempSortValue -= 150f;
+                    // Дальше 80м — стандартный приоритет
+                }
             }
         }
     }

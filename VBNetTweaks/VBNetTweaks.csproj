@@ -36,6 +36,7 @@
   </PropertyGroup>
   <ItemGroup>
     <None Include="0\AdaptiveThrottler.cs" />
+    <None Include="0\CompressionPatches.cs" />
     <None Include="0\Core\ConfigManager.cs" />
     <None Include="0\Core\HarmonyPatcher.cs" />
     <None Include="0\Core\ModConfig.cs" />
@@ -43,14 +44,15 @@
     <None Include="0\Core\NetworkConfigSync.cs" />
     <None Include="0\ICompressor.cs" />
     <None Include="0\ObjectPool.cs" />
+    <None Include="0\PacketLogger.cs" />
     <None Include="0\PlayerCache.cs" />
     <None Include="0\PlayerSyncSystem.cs" />
+    <None Include="0\RpcFilter.cs" />
     <None Include="0\ShipSyncSystem.cs" />
     <None Include="0\ShipUpdatePatch.cs" />
     <None Include="0\SmartOwnershipTransfer.cs" />
     <None Include="0\StatusEffectVFXManager.cs" />
     <None Include="0\VFXCleanupPatch.cs" />
-    <Compile Include="0\PerformanceMonitor.cs" />
     <Compile Include="GlobalUsings.cs" />
     <Compile Include="Patches\NetworkSyncPatches.cs" />
     <None Include="0\VFXOrphanCleanup.cs" />
@@ -64,8 +66,8 @@
     <None Include="0\ZDORemoval.cs" />
     <None Include="0\ZDOSorting.cs" />
     <None Include="0\ZoneOwnerManager.cs" />
-    <None Include="Utils\PacketLogger.cs" />
-    <Compile Include="RPCUtills\RpcFilter.cs" />
+    <Compile Include="Utils\Language.cs" />
+    <Compile Include="Utils\PerformanceMonitor.cs" />
     <Compile Include="ZDOUtills\ZDONetworkOptimizer.cs" />
     <None Include="0\BufferPool.cs" />
     <None Include="0\ListPool.cs" />

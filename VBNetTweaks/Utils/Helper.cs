@@ -2,10 +2,7 @@ namespace VBNetTweaks.Utils;
 
 public static class Helper
 {
-    public static bool IsServer() 
-    {
-        return ZNet.instance && ZNet.instance.IsServer();
-    }
+    public static bool IsServer() => ZNet.instance && ZNet.instance.IsServer();
 
     public static ZNet SafeZNetInstance() => ZNet.instance;
 
@@ -26,12 +23,4 @@ public static class Helper
     {
         if (VBNetTweaks.VerboseLogging.Value) Debug.LogWarning($"[VBNetTweaks] {message}");
     }
-
-  /*  public static void CheckCompressionStatus()
-    {
-        if (VBNetTweaks.ModuleCompression.Value && VBNetTweaks.DebugEnabled.Value)
-        {
-            ZLog.LogWarning(ZDONetworkOptimizer.GetCompressionStatus());
-        }
-    }*/
 }
