@@ -7,7 +7,7 @@
         public static void TriggerTeleportWindow() => _teleportBoostEnd = Time.time + 5f;
 
         public static int GetQueueLimit() => Mathf.Max(4096, Helper.IsServer() ? VBNetTweaks.c_ZDOQueueLimit_S.Value : VBNetTweaks.c_ZDOQueueLimit.Value);
-
+        
         [HarmonyPatch(typeof(ZSyncTransform), nameof(ZSyncTransform.SyncPosition))]
         [HarmonyTranspiler]
         public static IEnumerable<CodeInstruction> SyncPosition_Transpiler(IEnumerable<CodeInstruction> instructions)
@@ -131,11 +131,8 @@
             {
                 if (codes[i].opcode == OpCodes.Ldc_I4 && (int)codes[i].operand == 10240)
                 {
-                    // Заменяем инструкцию
                     codes[i].opcode = OpCodes.Call;
                     codes[i].operand = getQueueLimitMethod;
-                    // ✅ Не создаем новую инструкцию, а изменяем существующую
-                    // Все метки и информация об исключениях сохраняются автоматически!
                     replacedCount++;
                 }
             }

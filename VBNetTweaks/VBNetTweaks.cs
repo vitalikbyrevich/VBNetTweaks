@@ -19,7 +19,7 @@ namespace VBNetTweaks
     public class VBNetTweaks : BaseUnityPlugin
     {
         private const string ModName = "VBNetTweaks";
-        private const string ModVersion = "0.4.0.3";
+        private const string ModVersion = "0.4.0";
         private const string ModGUID = "VitByr.VBNetTweaks";
         public static VBNetTweaks Instance { get; private set; }
         public CustomRPC _configSyncRPC;
@@ -36,6 +36,7 @@ namespace VBNetTweaks
         public static ConfigEntry<bool> c_ModuleZDOOptimization;
         public static ConfigEntry<bool> c_ModuleShipSync;
         public static ConfigEntry<bool> c_ModuleZSyncTransformOptimization;
+        public static ConfigEntry<bool> c_ModuleMapPositionSync;
 
         public static ConfigEntry<int> c_SteamSendRateMaxKB;
         public static ConfigEntry<int> c_SteamSendBufferSizeKB;
@@ -60,6 +61,12 @@ namespace VBNetTweaks
         public static ConfigEntry<float> c_TeleportDistanceThreshold;
         public static ConfigEntry<float> c_TeleportRotationThreshold;
         
+        public static ConfigEntry<float> c_MapPositionSendInterval;
+        public static ConfigEntry<float> c_MapInterpolationDelay;
+        public static ConfigEntry<float> c_MapMaxPredictionSpeed;
+        public static ConfigEntry<float> c_MapMaxPredictionTime;
+        public static ConfigEntry<float> c_MapTeleportThreshold;
+        
         private Harmony _harmony;
 
         private void Awake()
@@ -82,7 +89,12 @@ namespace VBNetTweaks
             CreateConfigWatcher();
 
             _harmony = new Harmony(ModGUID);
-
+            
+            if (c_ModuleMapPositionSync.Value)
+            {
+                MapPositionSync.Initialize();
+                _harmony.PatchAll(typeof(MapPositionSync));
+            }
             _harmony.PatchAll(typeof(ZSteamSocket_Patchs));
             _harmony.PatchAll(typeof(ShipSyncFix));
             _harmony.PatchAll(typeof(NetworkSyncPatches));
@@ -95,48 +107,55 @@ namespace VBNetTweaks
         {
             var languageSection = "00 - Language";
             c_ConfigLanguage = Config.Bind(languageSection, "Language", Language.Russian, new ConfigDescription("Select interface language / Выберите язык интерфейса\nRequired Restart / Требуется рестарт"));
-            
+
             var debugSection = "01 - Debug";
             c_DebugEnabled = Config.Bind(debugSection, "DebugEnabled", false, c_ConfigLanguage.Value == Language.Russian ? "Включить отладочный вывод" : "Enable debug output");
             c_VerboseLogging = Config.Bind(debugSection, "VerboseLogging", false, c_ConfigLanguage.Value == Language.Russian ? "Включить подробное логирование" : "Enable verbose logging");
-            
-            
+
+
             var modulesSection = "02 - Modules";
-            c_ModuleSteamOptimizations = _clientConfig.BindConfig(modulesSection, "SteamOptimizations", true, c_ConfigLanguage.Value == Language.Russian ? "Оптимизации Steam сокета" : "Steam socket optimizations", synced: true);
-            c_ModuleZDOOptimization = _clientConfig.BindConfig(modulesSection, "ZDOOptimization", true, c_ConfigLanguage.Value == Language.Russian ? "Оптимизация ZDO отправок" : "Optimization ZDO sender", synced: true);
+            c_ModuleSteamOptimizations = _clientConfig.BindConfig(modulesSection, "SteamOptimizations", true,
+                c_ConfigLanguage.Value == Language.Russian ? "Оптимизации Steam сокета" : "Steam socket optimizations", synced: true);
+            c_ModuleZDOOptimization = _clientConfig.BindConfig(modulesSection, "ZDOOptimization", true, c_ConfigLanguage.Value == Language.Russian ? "Оптимизация ZDO отправок" : "Optimization ZDO sender",
+                synced: true);
             c_ModuleShipSync = _clientConfig.BindConfig(modulesSection, "ShipSync", true, c_ConfigLanguage.Value == Language.Russian ? "Синхронизация на кораблях" : "On ship synchronization", synced: true);
-            c_ModuleZSyncTransformOptimization = _clientConfig.BindConfig(modulesSection, "ZSyncTransformOptimization", true, c_ConfigLanguage.Value == Language.Russian ? "Оптимизация движения игроков и мобов" : "Optimizing the movement of players and mobs", synced: true);
+            c_ModuleZSyncTransformOptimization = _clientConfig.BindConfig(modulesSection, "ZSyncTransformOptimization", true,
+                c_ConfigLanguage.Value == Language.Russian ? "Оптимизация движения игроков и мобов" : "Optimizing the movement of players and mobs", synced: true);
+            c_ModuleMapPositionSync = _clientConfig.BindConfig(modulesSection, "MapPositionSync", true,
+                c_ConfigLanguage.Value == Language.Russian ? "Включить плавные маркеры игроков на карте\nУлучшает отображение позиций игроков" : "Enable smooth player markers on map\nImproves display of player positions", synced: true);
 
-            
+
             var steamSection = "03 - Client Steam Settings";
-            c_SteamSendRateMaxKB = _clientConfig.BindConfig(steamSection, "MaxRateKB", 2048, 
+            c_SteamSendRateMaxKB = _clientConfig.BindConfig(steamSection, "MaxRateKB", 2048,
                 c_ConfigLanguage.Value == Language.Russian ? "Максимальная скорость отправки Steam (vanilla = 150 KB/s)" : "Maximum Steam send rate (vanilla = 150 KB/s)", synced: true);
-                
-            c_SteamSendBufferSizeKB = _clientConfig.BindConfig(steamSection, "SendBufferSizeKB", 2048, 
-                c_ConfigLanguage.Value == Language.Russian ? "Размер буфера отправки Steam в KB (vanilla = ~260KB). Рекомендуется 1024-4096" : "Steam send buffer size in KB (vanilla = ~260KB). Recommended 1024-4096", synced: true);
-            
-            c_SteamTimeoutConnected = _clientConfig.BindConfig(steamSection, "TimeoutConnected", 120000f, 
-                c_ConfigLanguage.Value == Language.Russian ? 
-                    "Таймаут соединения Steam (миллисекунды)\n" + "Если соединение неактивно дольше этого времени — оно будет разорвано\n" + "vanilla: 30000 (30 секунд), рекомендуется: 60000-180000" :
-                    "Steam connection timeout (milliseconds)\n" + "If connection is idle longer than this — it will be closed\n" + "vanilla: 30000 (30 sec), recommended: 60000-180000", synced: true);
-            
-            c_SteamTimeoutKeepalive = _clientConfig.BindConfig(steamSection, "TimeoutKeepalive", 30000f, 
-                c_ConfigLanguage.Value == Language.Russian ? 
-                    "Интервал Keep-Alive Steam (миллисекунды)\n" + "Как часто отправлять пинг для поддержания соединения\n" + "vanilla: 30000 (30 секунд), рекомендуется: 15000-60000" :
-                    "Steam Keep-Alive interval (milliseconds)\n" + "How often to send ping to keep connection alive\n" + "vanilla: 30000 (30 sec), recommended: 15000-60000", synced: true);
 
-            c_SteamRecvMaxMessageSize = _clientConfig.BindConfig(steamSection, "RecvMaxMessageSize", 8, 
-                c_ConfigLanguage.Value == Language.Russian ? 
-                    "Максимальный размер принимаемого сообщения Steam (мегабайты)\n" + "Большие пакеты будут отклонены\n" + "vanilla: ~1-2 MB, рекомендуется: 4-16 MB" :
-                    "Maximum Steam receive message size (megabytes)\n" + "Large packets will be rejected\n" + "vanilla: ~1-2 MB, recommended: 4-16 MB", synced: true);
-            
-            
+            c_SteamSendBufferSizeKB = _clientConfig.BindConfig(steamSection, "SendBufferSizeKB", 2048,
+                c_ConfigLanguage.Value == Language.Russian
+                    ? "Размер буфера отправки Steam в KB (vanilla = ~260KB). Рекомендуется 1024-4096"
+                    : "Steam send buffer size in KB (vanilla = ~260KB). Recommended 1024-4096", synced: true);
+
+            c_SteamTimeoutConnected = _clientConfig.BindConfig(steamSection, "TimeoutConnected", 120000f,
+                c_ConfigLanguage.Value == Language.Russian
+                    ? "Таймаут соединения Steam (миллисекунды)\n" + "Если соединение неактивно дольше этого времени — оно будет разорвано\n" + "vanilla: 30000 (30 секунд), рекомендуется: 60000-180000"
+                    : "Steam connection timeout (milliseconds)\n" + "If connection is idle longer than this — it will be closed\n" + "vanilla: 30000 (30 sec), recommended: 60000-180000", synced: true);
+
+            c_SteamTimeoutKeepalive = _clientConfig.BindConfig(steamSection, "TimeoutKeepalive", 30000f,
+                c_ConfigLanguage.Value == Language.Russian
+                    ? "Интервал Keep-Alive Steam (миллисекунды)\n" + "Как часто отправлять пинг для поддержания соединения\n" + "vanilla: 30000 (30 секунд), рекомендуется: 15000-60000"
+                    : "Steam Keep-Alive interval (milliseconds)\n" + "How often to send ping to keep connection alive\n" + "vanilla: 30000 (30 sec), recommended: 15000-60000", synced: true);
+
+            c_SteamRecvMaxMessageSize = _clientConfig.BindConfig(steamSection, "RecvMaxMessageSize", 8,
+                c_ConfigLanguage.Value == Language.Russian
+                    ? "Максимальный размер принимаемого сообщения Steam (мегабайты)\n" + "Большие пакеты будут отклонены\n" + "vanilla: ~1-2 MB, рекомендуется: 4-16 MB"
+                    : "Maximum Steam receive message size (megabytes)\n" + "Large packets will be rejected\n" + "vanilla: ~1-2 MB, recommended: 4-16 MB", synced: true);
+
+
             var serverSection = "04 - Client ZDO Settings";
-       
-            c_ZDOQueueLimit = _clientConfig.BindConfig(serverSection, "ZDOQueueLimit", 10240, 
+
+            c_ZDOQueueLimit = _clientConfig.BindConfig(serverSection, "ZDOQueueLimit", 10240,
                 c_ConfigLanguage.Value == Language.Russian ? "Размер буфера отправки ZDO пакетов (vanilla = 10240 байт)" : "ZDO packet send buffer size (vanilla = 10240 bytes)", synced: true);
-                
-       
+
+
             var transformSection = "05 - Transform Settings";
             c_SmoothPosition = _clientConfig.BindConfig(transformSection, "SmoothPosition", 0.1f,
                 c_ConfigLanguage.Value == Language.Russian ? "Сглаживание позиции (выше = плавнее, но больше задержка) (vanilla: 0.20)" : "Position smoothing value (vanilla: 0.20)", synced: true);
@@ -144,45 +163,69 @@ namespace VBNetTweaks
             c_SmoothRotation = _clientConfig.BindConfig(transformSection, "SmoothRotation", 0.3f,
                 c_ConfigLanguage.Value == Language.Russian ? "Значение сглаживания поворота (vanilla: 0.50)" : "Rotation smoothing value (vanilla: 0.50)", synced: true);
 
-            c_MicroThreshold = _clientConfig.BindConfig(transformSection, "MicroThreshold", 0.05f,
+            c_MicroThreshold = _clientConfig.BindConfig(transformSection, "MicroThreshold", 0.002f,
                 c_ConfigLanguage.Value == Language.Russian ? "Порог микро-движений (выше = меньше обновлений) (vanilla: 0.001)" : "Micro-movement threshold (vanilla: 0.001)", synced: true);
 
             c_ClientDistanceThreshold = _clientConfig.BindConfig(transformSection, "ClientDistanceThreshold", 0.005f,
                 c_ConfigLanguage.Value == Language.Russian ? "Порог дистанции для клиентской синхронизации (vanilla: 0.01)" : "Client distance threshold (vanilla: 0.01)", synced: true);
-            
+
             c_TeleportDistanceThreshold = _clientConfig.BindConfig(transformSection, "TeleportDistanceThreshold", 3f,
-                c_ConfigLanguage.Value == Language.Russian ? "Порог дистанции для мгновенного телепорта (метры)\n" + "Если объект сместился больше этого значения — телепорт без сглаживания\n" + "vanilla: 5, рекомендуется: 5-20" :
-                    "Distance threshold for instant teleport (meters)\n" + "If object moves beyond this value — teleport without smoothing\n" + "vanilla: 5, recommended: 5-20", synced: true);
+                c_ConfigLanguage.Value == Language.Russian
+                    ? "Порог дистанции для мгновенного телепорта (метры)\n" + "Если объект сместился больше этого значения — телепорт без сглаживания\n" + "vanilla: 5, рекомендуется: 5-20"
+                    : "Distance threshold for instant teleport (meters)\n" + "If object moves beyond this value — teleport without smoothing\n" + "vanilla: 5, recommended: 5-20", synced: true);
 
             c_TeleportRotationThreshold = _clientConfig.BindConfig(transformSection, "TeleportRotationThreshold", 35f,
-                c_ConfigLanguage.Value == Language.Russian ? "Порог угла для мгновенного телепорта поворота (градусы)\n" + "Если объект повернулся больше этого значения — телепорт без сглаживания\n" + "vanilla: 45, рекомендуется: 30-90" :
-                    "Angle threshold for instant rotation teleport (degrees)\n" + "If object rotates beyond this value — teleport without smoothing\n" + "vanilla: 45, recommended: 30-90", synced: true);
+                c_ConfigLanguage.Value == Language.Russian
+                    ? "Порог угла для мгновенного телепорта поворота (градусы)\n" + "Если объект повернулся больше этого значения — телепорт без сглаживания\n" + "vanilla: 45, рекомендуется: 30-90"
+                    : "Angle threshold for instant rotation teleport (degrees)\n" + "If object rotates beyond this value — teleport without smoothing\n" + "vanilla: 45, recommended: 30-90", synced: true);
+
+            var mapSection = "08 - Map Positions";
+
+            c_MapPositionSendInterval = _clientConfig.BindConfig(mapSection, "SendInterval", 0.5f,
+                c_ConfigLanguage.Value == Language.Russian
+                    ? "Интервал отправки позиций игроков (сек)\nМеньше = плавнее, но больше трафик\nvanilla: 2.0, рекомендуется: 0.2-0.5" : "Player position send interval (sec)\nLower = smoother, but more traffic\nvanilla: 2.0, recommended: 0.2-0.5", synced: true);
+
+            c_MapInterpolationDelay = _clientConfig.BindConfig(mapSection, "InterpolationDelay", 0.1f,
+                c_ConfigLanguage.Value == Language.Russian
+                    ? "Задержка интерполяции маркеров (сек)\nМаркеры будут отставать на это значение для плавности" : "Marker interpolation delay (sec)\nMarkers will lag by this value for smoothness", synced: true);
+
+            c_MapMaxPredictionSpeed = _clientConfig.BindConfig(mapSection, "MaxPredictionSpeed", 40f,
+                c_ConfigLanguage.Value == Language.Russian
+                    ? "Максимальная скорость предсказания движения (м/с)\nОграничивает рывки при экстраполяции" : "Maximum movement prediction speed (m/s)\nLimits jerks during extrapolation", synced: true);
+
+            c_MapMaxPredictionTime = _clientConfig.BindConfig(mapSection, "MaxPredictionTime", 0.05f,
+                c_ConfigLanguage.Value == Language.Russian
+                    ? "Максимальное время предсказания движения (сек)\nКак долго маркер двигается по инерции" : "Maximum movement prediction time (sec)\nHow long marker moves by inertia", synced: true);
+
+            c_MapTeleportThreshold = _clientConfig.BindConfig(mapSection, "TeleportThreshold", 50f,
+                c_ConfigLanguage.Value == Language.Russian
+                    ? "Порог телепорта для маркеров (метры)\nЕсли игрок сместился дальше — маркер прыгнет мгновенно" : "Teleport threshold for markers (meters)\nIf player moves beyond — marker jumps instantly", synced: true);
         }
 
         private void InitServerConfigs()
         {
             var steamSection = "06 - Server Steam Settings";
             c_SteamSendRateMaxKB_S = _clientConfig.BindConfig(steamSection, "MaxRateKB", 4096, 
-                c_ConfigLanguage.Value == Language.Russian ? "Максимальная скорость отправки Steam (vanilla = 150 KB/s)" : "Maximum Steam send rate (vanilla = 150 KB/s)");
+                c_ConfigLanguage.Value == Language.Russian ? "Максимальная скорость отправки Steam (vanilla = 150 KB/s)" : "Maximum Steam send rate (vanilla = 150 KB/s)", synced: false);
                 
             c_SteamSendBufferSizeKB_S = _clientConfig.BindConfig(steamSection, "SendBufferSizeKB", 4096, 
-                c_ConfigLanguage.Value == Language.Russian ? "Размер буфера отправки Steam в KB (vanilla = ~260KB). Рекомендуется 1024-4096" : "Steam send buffer size in KB (vanilla = ~260KB). Recommended 1024-4096");
+                c_ConfigLanguage.Value == Language.Russian ? "Размер буфера отправки Steam в KB (vanilla = ~260KB). Рекомендуется 1024-4096" : "Steam send buffer size in KB (vanilla = ~260KB). Recommended 1024-4096", synced: false);
 
             
             var serverSection = "07 - Server ZDO Settings";
-            c_SendInterval_S = _clientConfig.BindConfig(serverSection, "SendInterval", 0.03f, 
-                c_ConfigLanguage.Value == Language.Russian ? "Интервал отправки данных (vanilla = 0.05)" : "Data send interval (vanilla = 0.05)");
+            c_SendInterval_S = _clientConfig.BindConfig(serverSection, "SendInterval", 0.02f, 
+                c_ConfigLanguage.Value == Language.Russian ? "Интервал отправки данных (vanilla = 0.05)" : "Data send interval (vanilla = 0.05)", synced: false);
                 
-            c_PeersPerUpdate_S = _clientConfig.BindConfig(serverSection, "PeersPerUpdate", 15, 
-                c_ConfigLanguage.Value == Language.Russian ? "Количество пиров за один апдейт (vanilla = 1). Лучше ставить значение равное максимальному количеству слотов сервера." : "Peers per update (vanilla = 1). Better set equal to max server slots.");
+            c_PeersPerUpdate_S = _clientConfig.BindConfig(serverSection, "PeersPerUpdate", 10, 
+                c_ConfigLanguage.Value == Language.Russian ? "Количество пиров за один апдейт (vanilla = 1). Лучше ставить значение равное максимальному количеству слотов сервера." : "Peers per update (vanilla = 1). Better set equal to max server slots.", synced: false);
                 
-            c_ZDOQueueLimit_S = _clientConfig.BindConfig(serverSection, "ZDOQueueLimit", 30720, 
-                c_ConfigLanguage.Value == Language.Russian ? "Размер буфера отправки ZDO пакетов (vanilla = 10240 байт)" : "ZDO packet send buffer size (vanilla = 10240 bytes)");
+            c_ZDOQueueLimit_S = _clientConfig.BindConfig(serverSection, "ZDOQueueLimit", 20480, 
+                c_ConfigLanguage.Value == Language.Russian ? "Размер буфера отправки ZDO пакетов (vanilla = 10240 байт)" : "ZDO packet send buffer size (vanilla = 10240 bytes)", synced: false);
                 
-            c_FlushThresholdPercent_S = _clientConfig.BindConfig(serverSection, "FlushThresholdPercent", 0.35f, 
+            c_FlushThresholdPercent_S = _clientConfig.BindConfig(serverSection, "FlushThresholdPercent", 0.2f, 
                 c_ConfigLanguage.Value == Language.Russian ? 
                     "Процент от ZDOQueueLimit для активации flush (0.0-1.0)\n" + "0.1 = редкий flush (экономия трафика, но задержки)\n" + "0.3 = оптимальный баланс (рекомендуется)\n" + "0.5 = частый flush (меньше задержек, больше трафика)" :
-                    "Percentage of ZDOQueueLimit for flush activation (0.0-1.0)\n" + "0.1 = rare flush (traffic saving, but delays)\n" + "0.3 = optimal balance (recommended)\n" + "0.5 = frequent flush (less delays, more traffic)");
+                    "Percentage of ZDOQueueLimit for flush activation (0.0-1.0)\n" + "0.1 = rare flush (traffic saving, but delays)\n" + "0.3 = optimal balance (recommended)\n" + "0.5 = frequent flush (less delays, more traffic)", synced: false);
         }
 
         public ZPackage BuildConfigPackage()
@@ -210,6 +253,12 @@ namespace VBNetTweaks
                 pkg.Write(c_ClientDistanceThreshold.Value);
                 pkg.Write(c_TeleportDistanceThreshold.Value);
                 pkg.Write(c_TeleportRotationThreshold.Value);
+                
+                pkg.Write(c_MapPositionSendInterval.Value);
+                pkg.Write(c_MapInterpolationDelay.Value);
+                pkg.Write(c_MapMaxPredictionSpeed.Value);
+                pkg.Write(c_MapMaxPredictionTime.Value);
+                pkg.Write(c_MapTeleportThreshold.Value);
             }
             catch (Exception e)
             {
@@ -251,6 +300,12 @@ namespace VBNetTweaks
                 c_ClientDistanceThreshold.Value = pkg.ReadSingle();
                 c_TeleportDistanceThreshold.Value = pkg.ReadSingle();
                 c_TeleportRotationThreshold.Value = pkg.ReadSingle();
+                
+                c_MapPositionSendInterval.Value = pkg.ReadSingle();
+                c_MapInterpolationDelay.Value = pkg.ReadSingle();
+                c_MapMaxPredictionSpeed.Value = pkg.ReadSingle();
+                c_MapMaxPredictionTime.Value = pkg.ReadSingle();
+                c_MapTeleportThreshold.Value = pkg.ReadSingle();
             }
             catch (Exception e)
             {
