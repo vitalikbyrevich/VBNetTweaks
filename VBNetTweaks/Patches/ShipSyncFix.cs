@@ -1,9 +1,6 @@
 ﻿namespace VBNetTweaks.Patches;
 
-using HarmonyLib;
-using UnityEngine;
-using System.Collections.Generic;
-
+[HarmonyPatch]
 public static class ShipSyncFix
 {
    // private static readonly Dictionary<long, Vector3> _playerPosVelocities = new Dictionary<long, Vector3>();
@@ -15,7 +12,7 @@ public static class ShipSyncFix
     {
         if (!granted) return;
         if (!__instance.m_nview.IsValid()) return;
-        if (sender != ZNet.GetUID()) return;
+        if (sender != ZDOMan.GetSessionID()) return;
 
         var ship = __instance.m_ship;
         if (!ship) return;
@@ -45,7 +42,7 @@ public static class ShipSyncFix
         __instance.m_lastDepth = depth;
         __instance.m_lastUpdateWaterForceTime = time;
 
-        if (num2 <= 0.001f) return true;
+        if (num2 <= 0.001f) return false;
 
         float num3 = num / num2;
 
@@ -103,7 +100,7 @@ public static class ShipSyncFix
         if (Time.time - __instance.m_sendRudderTime > 0.05f)
         {
             __instance.m_sendRudderTime = Time.time;
-            __instance.m_nview.InvokeRPC("Rudder", __instance.m_rudderValue);
+            if (!__instance.m_nview.IsOwner()) __instance.m_nview.InvokeRPC("Rudder", __instance.m_rudderValue);
         }
 
         return false;

@@ -19,7 +19,7 @@ namespace VBNetTweaks
     public class VBNetTweaks : BaseUnityPlugin
     {
         private const string ModName = "VBNetTweaks";
-        private const string ModVersion = "0.4.0";
+        private const string ModVersion = "0.4.1";
         private const string ModGUID = "VitByr.VBNetTweaks";
         public static VBNetTweaks Instance { get; private set; }
         public CustomRPC _configSyncRPC;
@@ -95,6 +95,7 @@ namespace VBNetTweaks
                 MapPositionSync.Initialize();
                 _harmony.PatchAll(typeof(MapPositionSync));
             }
+            _harmony.PatchAll(typeof(ServerReliabilityPatches));
             _harmony.PatchAll(typeof(ZSteamSocket_Patchs));
             _harmony.PatchAll(typeof(ShipSyncFix));
             _harmony.PatchAll(typeof(NetworkSyncPatches));

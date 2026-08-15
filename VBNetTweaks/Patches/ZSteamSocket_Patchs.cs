@@ -63,20 +63,20 @@
                 // ============================================
                 // RecvBufferSize — через ID (10)
                 // ============================================
-                SetConfigInt((ESteamNetworkingConfigValue)10, sendBuffer);
+                SetConfigInt((ESteamNetworkingConfigValue)47, sendBuffer);
                 Helper.LogDebug($"RecvBufferSize: {sendBuffer/1024}KB");
 
                 // ============================================
                 // RecvMaxMessageSize — через ID (12)
                 // ============================================
-                SetConfigInt((ESteamNetworkingConfigValue)12, RECV_MAX_MESSAGE_SIZE);
+                SetConfigInt((ESteamNetworkingConfigValue)49, RECV_MAX_MESSAGE_SIZE);
                 Helper.LogDebug($"RecvMaxMessageSize: {RECV_MAX_MESSAGE_SIZE/1024/1024}MB");
 
                 // ============================================
                 // TimeoutKeepAlive — через ID (1)
                 // ============================================
-                SetConfigFloat((ESteamNetworkingConfigValue)1, TIMEOUT_KEEPALIVE);
-                Helper.LogDebug($"TimeoutKeepAlive: {TIMEOUT_KEEPALIVE}s");
+              /*  SetConfigFloat((ESteamNetworkingConfigValue)1, TIMEOUT_KEEPALIVE);
+                Helper.LogDebug($"TimeoutKeepAlive: {TIMEOUT_KEEPALIVE}s");*/
                 
                 SetConfigInt(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendRateMin, minRate);
                 SetConfigInt(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendRateMax, maxRate);

@@ -154,12 +154,12 @@
         [HarmonyPrefix]
         public static bool InLoadingScreen_Extend(ref bool __result)
         {
+            if (!VBNetTweaks.c_ModEnabled.Value) return true;
             if (Time.time < _teleportBoostEnd)
             {
                 __result = true;
                 return false;
             }
-
             return true;
         }
 
@@ -167,6 +167,7 @@
         [HarmonyPostfix]
         public static void CreateDestroyObjects_TriggerTeleport()
         {
+            if (!VBNetTweaks.c_ModEnabled.Value) return;
             if (Player.m_localPlayer?.IsTeleporting() == true) TriggerTeleportWindow();
         }
     }
