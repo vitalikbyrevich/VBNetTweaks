@@ -2,7 +2,7 @@ namespace VBNetTweaks.Utils;
 
 public static class Helper
 {
-    private static readonly Dictionary<int, bool> _creatureCache = new();
+  /*  private static readonly Dictionary<int, bool> _creatureCache = new();
     private static readonly Dictionary<int, bool> _shipCache = new();
 
     public static bool IsCreature(ZDO zdo)
@@ -39,7 +39,7 @@ public static class Helper
 
         _shipCache[prefab] = result;
         return result;
-    }
+    }*/
     
     public static bool IsServer() => ZNet.instance && ZNet.instance.IsServer();
     

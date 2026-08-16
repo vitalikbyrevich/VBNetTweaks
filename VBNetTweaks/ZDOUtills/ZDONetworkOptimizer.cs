@@ -13,61 +13,37 @@
         }
 
         private static readonly Dictionary<int, SyncPriority> _priorityCache = new Dictionary<int, SyncPriority>();
-        
         private static bool _cacheWarmed;
-
-        public static int GetSafeQueueLimit()
-        {
-            if (Helper.IsServer()) return Mathf.Clamp(VBNetTweaks.c_ZDOQueueLimit_S.Value, 8192, 1048576);
-            return Mathf.Clamp(VBNetTweaks.c_ZDOQueueLimit.Value, 8192, 1048576);
-        }
+        private static float _accum;
 
         public static void OptimizedSendZDOToPeers(ZDOMan man, float dt)
         {
-            try
+            int count = man.m_peers.Count;
+            if (count == 0) { _accum = 0f; return; }
+
+            float interval = Mathf.Clamp(VBNetTweaks.c_SendInterval_S.Value, 0.01f, 0.2f);
+            int perBatch   = Mathf.Clamp(VBNetTweaks.c_PeersPerUpdate_S.Value, 1, count);
+
+            _accum += (perBatch / interval) * dt;        // отправок/сек, независимо от FPS
+            int budget = (int)_accum;
+            if (budget <= 0) return;
+            _accum -= budget;
+            budget = Mathf.Min(budget, count);           // не догоняем после хикапа
+
+            int idx = (man.m_nextSendPeer >= 0) ? man.m_nextSendPeer : 0;
+            int sent = 0, scanned = 0;
+            while (sent < budget && scanned < count)
             {
-                int count = man.m_peers.Count;
-                if (count == 0) return;
-
-                man.m_sendTimer += dt;
-                float interval = Mathf.Clamp(VBNetTweaks.c_SendInterval_S.Value, 0.01f, 0.2f);
-                
-                if (man.m_sendTimer < interval) return;
-                
-                man.m_sendTimer = 0f;
-
-                int maxPeers = Mathf.Clamp(VBNetTweaks.c_PeersPerUpdate_S.Value, 1, count);
-                int start = (man.m_nextSendPeer >= 0) ? man.m_nextSendPeer : 0;
-                int processed = 0;
-
-                for (int i = 0; i < maxPeers; i++)
-                {
-                    int idx = (start + i) % count;
-                    processed++;
-
-                    ZDOMan.ZDOPeer peer = man.m_peers[idx];
-                    if (peer?.m_peer?.m_socket?.IsConnected() != true) continue;
-
-                    int queue = peer.m_peer.m_socket.GetSendQueueSize();
-                    int limit = GetSafeQueueLimit();
-
-                    if (queue <= limit)
-                    {
-                        float flushThreshold = Mathf.Clamp01(VBNetTweaks.c_FlushThresholdPercent_S.Value) * limit;
-                        bool flush = queue <= flushThreshold;
-                        man.SendZDOs(peer, flush);
-                    }
-                }
-
-                man.m_nextSendPeer = (start + processed) % count;
+                var peer = man.m_peers[idx % count];
+                idx++; scanned++;
+                if (peer?.m_peer?.m_socket?.IsConnected() != true) continue;
+                man.SendZDOs(peer, false);               // очередь проверит сам
+                sent++;
             }
-            catch (Exception ex)
-            {
-                Helper.LogDebug($"Error in OptimizedSendZDOToPeers: {ex}");
-            }
+            man.m_nextSendPeer = idx % count;
         }
 
-        private static int SafeCustomCompare(ZDO x, ZDO y)
+     /*   private static int SafeCustomCompare(ZDO x, ZDO y)
         {
             if (x == null && y == null) return 0;
             if (x == null) return -1;
@@ -96,7 +72,7 @@
             if (a < b) return -1;
             if (a > b) return 1;
             return 0;
-        }
+        }*/
 
         private static SyncPriority GetCachedPriority(ZDO zdo)
         {
@@ -124,12 +100,28 @@
         public static void WarmUpCache()
         {
             if (_cacheWarmed || !ZNetScene.instance) return;
-            
+    
             Helper.LogDebug("[ZDONetworkOptimizer] Warming up priority cache...");
             int count = 0;
-            
+    
+            foreach (var go in ZNetScene.instance.m_prefabs)
+            {
+                if (!go) continue;
+                int hash = go.name.GetStableHashCode();
+                if (_priorityCache.ContainsKey(hash)) continue;
+        
+                SyncPriority p = SyncPriority.Default;
+                if (go.GetComponent<Player>()) p = SyncPriority.Player;
+                else if (go.GetComponent<Ship>()) p = SyncPriority.Ship;
+                else if (go.GetComponent<Character>()) p = SyncPriority.Creature;
+                else if (go.GetComponent<Piece>()) p = SyncPriority.Piece;
+        
+                _priorityCache[hash] = p;
+                count++;
+            }
+    
             _cacheWarmed = true;
-            Helper.LogDebug($"[ZDONetworkOptimizer] Cache ready. Entries: {_priorityCache.Count}");
+            Helper.LogDebug($"[ZDONetworkOptimizer] Cache warmed: {count} prefabs cached");
         }
 
         [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.Awake))]
@@ -149,13 +141,46 @@
             return false;
         }
 
-        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.ServerSendCompare))]
+     /*   [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.ServerSendCompare))]
         [HarmonyPrefix]
         private static bool CustomServerSendCompare(ZDO x, ZDO y, ref int __result)
         {
             if (!VBNetTweaks.c_ModuleZDOOptimization.Value || !ZNet.instance.IsServer()) return true;
 
             __result = SafeCustomCompare(x, y);
+            return false;
+        }*/
+        
+        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.ServerSortSendZDOS))]
+        [HarmonyPrefix]
+        private static bool ServerSort_Prefix(List<ZDO> objects, Vector3 refPos, ZDOMan.ZDOPeer peer)
+        {
+            if (!VBNetTweaks.c_ModuleZDOOptimization.Value) return true;
+
+            float time = Time.time;
+            float playerBonus = VBNetTweaks.c_PlayerSortBonus.Value;
+            float staticPenalty = VBNetTweaks.c_StaticSortPenalty.Value;
+
+            for (int i = 0; i < objects.Count; i++)
+            {
+                ZDO z = objects[i];
+                float v = Vector3.Distance(z.GetPosition(), refPos);
+                float age = 100f;
+                if (peer.m_zdos.TryGetValue(z.m_uid, out var info))
+                    age = Mathf.Clamp(time - info.m_syncTime, 0f, 100f);
+                v -= age * 1.5f;
+
+                // один лукап на ОБЪЕКТ, а не на сравнение
+                switch (GetCachedPriority(z))
+                {
+                    case SyncPriority.Player: v -= playerBonus; break;
+                    case SyncPriority.Ship:   v -= playerBonus * 0.6f; break;
+                    case SyncPriority.Piece:  v += staticPenalty; break;
+                }
+                z.m_tempSortValue = v;
+            }
+            ZDOMan.s_compareReceiver = peer.m_peer.m_uid;
+            objects.Sort(ZDOMan.ServerSendCompare);   // ванильный компаратор, без патча
             return false;
         }
     }

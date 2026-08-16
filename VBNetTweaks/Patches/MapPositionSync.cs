@@ -1,4 +1,4 @@
-﻿namespace VBNetTweaks
+﻿namespace VBNetTweaks.Patches
 {
     [HarmonyPatch]
     public static class MapPositionSync
@@ -7,25 +7,14 @@
         private static float _mapPosTimer;
         private static readonly Dictionary<ZDOID, MapTrackData> _mapTracks = new();
 
-        // ============================================================
-        // 2. Инициализация RPC
-        // ============================================================
         public static void Initialize()
         {
             if (_mapPositionRPC != null) return;
             
-            _mapPositionRPC = NetworkManager.Instance.AddRPC(
-                "VBNet_MapPositions",
-                OnServerReceiveMapPos,
-                OnClientReceiveMapPos
-            );
-            
+            _mapPositionRPC = NetworkManager.Instance.AddRPC("VBNet_MapPositions", OnServerReceiveMapPos, OnClientReceiveMapPos);
             Helper.LogDebug("[MapPositionSync] RPC initialized");
         }
 
-        // ============================================================
-        // 3. Сервер: отправка позиций
-        // ============================================================
         [HarmonyPatch(typeof(ZNet), nameof(ZNet.Update))]
         [HarmonyPostfix]
         static void ZNet_Update_MapPos(ZNet __instance)
@@ -34,7 +23,6 @@
             if (!__instance.IsServer()) return;
             if (_mapPositionRPC == null) return;
 
-            // Используем Time.deltaTime вместо dt
             _mapPosTimer += Time.deltaTime;
     
             float interval = VBNetTweaks.c_MapPositionSendInterval.Value;
@@ -49,7 +37,6 @@
             var peers = net.GetPeers();
             if (peers.Count == 0) return;
 
-            // Собираем данные о публичных позициях
             var positions = new List<(ZDOID id, Vector3 pos)>();
             
             foreach (var peer in peers)
@@ -63,7 +50,6 @@
 
             if (positions.Count == 0) return;
 
-            // Создаем пакет
             ZPackage pkg = new ZPackage();
             pkg.Write(positions.Count);
             
@@ -73,34 +59,22 @@
                 pkg.Write(pos);
             }
 
-            // Отправляем всем
             _mapPositionRPC.SendPackage(ZRoutedRpc.Everybody, pkg);
             
-            if (VBNetTweaks.c_VerboseLogging.Value)
-            {
-                Helper.LogVerbose($"[MapPositionSync] Sent {positions.Count} positions");
-            }
+            if (VBNetTweaks.c_VerboseLogging.Value) Helper.LogVerbose($"[MapPositionSync] Sent {positions.Count} positions");
         }
 
-        // ============================================================
-        // 4. Сервер: получение (не используется, но нужен для CustomRPC)
-        // ============================================================
         private static IEnumerator OnServerReceiveMapPos(long sender, ZPackage pkg)
         {
-            // Сервер не обрабатывает этот RPC
             yield break;
         }
 
-        // ============================================================
-        // 5. Клиент: получение позиций
-        // ============================================================
         private static IEnumerator OnClientReceiveMapPos(long sender, ZPackage pkg)
         {
             if (!VBNetTweaks.c_ModuleMapPositionSync.Value) yield break;
             if (Helper.IsServer()) yield break;
-            if (ZNet.instance == null) yield break;
+            if (!ZNet.instance) yield break;
 
-            // Проверяем, что пакет от сервера
             var serverPeer = ZNet.instance.GetServerPeer();
             if (serverPeer == null || sender != serverPeer.m_uid) yield break;
 
@@ -123,22 +97,14 @@
                     track.AddSnapshot(now, pos);
                 }
 
-                if (VBNetTweaks.c_VerboseLogging.Value && count > 0)
-                {
-                    Helper.LogVerbose($"[MapPositionSync] Received {count} positions");
-                }
+                if (VBNetTweaks.c_VerboseLogging.Value && count > 0) Helper.LogVerbose($"[MapPositionSync] Received {count} positions");
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
                 Helper.LogDebug($"[MapPositionSync] Error processing positions: {ex.Message}");
             }
-
-            yield break;
         }
 
-        // ============================================================
-        // 6. Клиент: обновление маркеров на карте
-        // ============================================================
         [HarmonyPatch(typeof(Minimap), nameof(Minimap.UpdatePlayerPins))]
         [HarmonyPostfix]
         static void Minimap_UpdatePlayerPins_Postfix(Minimap __instance, float dt)
@@ -153,14 +119,12 @@
             float renderTime = Time.time - VBNetTweaks.c_MapInterpolationDelay.Value;
             float maxPredictionTime = VBNetTweaks.c_MapMaxPredictionTime.Value;
             float maxPredictionSpeed = VBNetTweaks.c_MapMaxPredictionSpeed.Value;
-            float teleportThreshold = VBNetTweaks.c_MapTeleportThreshold.Value;
 
             for (int i = 0; i < count; i++)
             {
                 var pin = __instance.m_playerPins[i];
                 var info = __instance.m_tempPlayerInfo[i];
 
-                // Только публичные позиции
                 if (!info.m_publicPosition) continue;
 
                 ZDOID id = info.m_characterID;
@@ -168,35 +132,17 @@
 
                 if (_mapTracks.TryGetValue(id, out var track))
                 {
-                    // Используем снапшоты для интерполяции
-                    if (track.TryGetInterpolated(renderTime, maxPredictionTime, maxPredictionSpeed, out Vector3 interpolated))
-                    {
-                        pin.m_pos = interpolated;
-                    }
-                    else
-                    {
-                        // Fallback: ванильная позиция
-                        pin.m_pos = info.m_position;
-                    }
+                    if (track.TryGetInterpolated(renderTime, maxPredictionTime, maxPredictionSpeed, out Vector3 interpolated)) pin.m_pos = interpolated;
+                    else pin.m_pos = info.m_position;
                 }
-                else
-                {
-                    // Нет данных из кастомного RPC — используем ванильную позицию
-                    pin.m_pos = info.m_position;
-                }
+                else pin.m_pos = info.m_position;
             }
         }
 
-        // ============================================================
-        // 7. Очистка кэша
-        // ============================================================
         [HarmonyPatch(typeof(ZNet), nameof(ZNet.OnDestroy))]
         [HarmonyPostfix]
         static void ClearCache() => _mapTracks.Clear();
 
-        // ============================================================
-        // 8. Класс данных для интерполяции
-        // ============================================================
         private class MapTrackData
         {
             public struct Snapshot
@@ -213,14 +159,12 @@
 
             public void AddSnapshot(float time, Vector3 pos)
             {
-                // Обновляем скорость при изменении позиции
                 if (_snapshots.Count > 0)
                 {
                     var last = _snapshots[_snapshots.Count - 1];
                     
                     if (last.pos == pos)
                     {
-                        // Позиция не изменилась — обновляем время
                         _snapshots[_snapshots.Count - 1] = new Snapshot { time = time, pos = pos };
                         return;
                     }
@@ -239,7 +183,6 @@
 
                 _snapshots.Add(new Snapshot { time = time, pos = pos });
 
-                // Ограничиваем размер истории
                 while (_snapshots.Count > MAX_SNAPSHOTS)
                 {
                     _snapshots.RemoveAt(0);
@@ -255,38 +198,27 @@
 
                 if (_snapshots.Count == 0) return false;
 
-                // Если рендер раньше первого снапшота
                 if (renderTime <= _snapshots[0].time)
                 {
                     result = _snapshots[0].pos;
                     return true;
                 }
 
-                // Если рендер позже последнего — экстраполяция
                 if (renderTime >= _snapshots[_snapshots.Count - 1].time)
                 {
                     var last = _snapshots[_snapshots.Count - 1];
                     float extraTime = renderTime - last.time;
 
-                    // Ограничиваем экстраполяцию
-                    if (extraTime > maxPredictionTime)
-                    {
-                        extraTime = maxPredictionTime;
-                    }
+                    if (extraTime > maxPredictionTime) extraTime = maxPredictionTime;
 
                     Vector3 prediction = _velocity * extraTime;
                     
-                    // Ограничиваем скорость предсказания
-                    if (prediction.magnitude > maxPredictionSpeed * extraTime)
-                    {
-                        prediction = prediction.normalized * maxPredictionSpeed * extraTime;
-                    }
+                    if (prediction.magnitude > maxPredictionSpeed * extraTime) prediction = prediction.normalized * maxPredictionSpeed * extraTime;
 
                     result = last.pos + prediction;
                     return true;
                 }
 
-                // Ищем два снапшота вокруг renderTime
                 for (int i = 1; i < _snapshots.Count; i++)
                 {
                     if (renderTime <= _snapshots[i].time)

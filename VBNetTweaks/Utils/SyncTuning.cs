@@ -31,4 +31,6 @@ public static class SyncTuning
     public static float GetClientDistanceThreshold() { RefreshIfNeeded(); return _clientDistance; }
     public static float GetTeleportDistanceThreshold() { RefreshIfNeeded(); return _teleportDistance; }
     public static float GetTeleportRotationThreshold() { RefreshIfNeeded(); return _teleportRotation; }
+    
+    public static float GetTimeoutConnected() => Mathf.Clamp(VBNetTweaks.c_SteamTimeoutConnected.Value, 5000f, 600000f);
 }

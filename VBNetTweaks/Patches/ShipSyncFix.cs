@@ -3,7 +3,6 @@
 [HarmonyPatch]
 public static class ShipSyncFix
 {
-   // private static readonly Dictionary<long, Vector3> _playerPosVelocities = new Dictionary<long, Vector3>();
     private static float _lastDamageLog;
 
     [HarmonyPatch(typeof(ShipControlls), nameof(ShipControlls.RPC_RequestRespons))]
@@ -12,25 +11,23 @@ public static class ShipSyncFix
     {
         if (!granted) return;
         if (!__instance.m_nview.IsValid()) return;
-        if (sender != ZDOMan.GetSessionID()) return;
-
+    
         var ship = __instance.m_ship;
         if (!ship) return;
-
+    
         var nview = ship.m_nview;
         if (!nview || !nview.IsValid()) return;
-
+    
         var zdo = nview.GetZDO();
         if (zdo == null) return;
-
-        // Если уже владелец — ничего не делаем
-        if (zdo.GetOwner() == sender) return;
-
-        // Становимся владельцем
-        zdo.SetOwner(sender);
+    
+        long me = ZDOMan.GetSessionID();
+        if (zdo.GetOwner() == me) return;
+    
+        zdo.SetOwner(me);
         ZDOMan.instance.ForceSendZDO(zdo.m_uid);
-
-        Helper.LogVerbose($"[ShipOwnership] Player {sender} took ownership of ship");
+    
+        if (VBNetTweaks.c_VerboseLogging.Value) Helper.LogVerbose($"[ShipOwnership] Local player took ownership of ship (response from {sender})");
     }
 
     [HarmonyPrefix]
@@ -105,54 +102,4 @@ public static class ShipSyncFix
 
         return false;
     }
-
-  /*  [HarmonyPatch(typeof(Player), nameof(Player.UpdateAttach))]
-    [HarmonyPostfix]
-    public static void SmoothAttachedPlayer(Player __instance)
-    {
-        if (!VBNetTweaks.c_ModuleShipSync.Value) return;
-        if (!__instance.m_attached || !__instance.m_attachedToShip) return;
-        if (!__instance.m_attachPoint) return;
-
-        long playerId = __instance.GetPlayerID();
-        Transform targetTransform = __instance.m_attachPoint;
-        Transform playerTransform = __instance.transform;
-
-        if (!_playerPosVelocities.ContainsKey(playerId))
-        {
-            _playerPosVelocities[playerId] = Vector3.zero;
-            playerTransform.position = targetTransform.position;
-            playerTransform.rotation = targetTransform.rotation;
-            return;
-        }
-
-        Vector3 targetPos = targetTransform.position;
-        Quaternion targetRot = targetTransform.rotation;
-        float posSmoothTime = 0.08f;
-        Vector3 currentVel = _playerPosVelocities[playerId];
-        playerTransform.position = Vector3.SmoothDamp(playerTransform.position, targetPos, ref currentVel, posSmoothTime);
-        _playerPosVelocities[playerId] = currentVel;
-        playerTransform.rotation = Quaternion.Slerp(playerTransform.rotation, targetRot, Time.deltaTime / 0.1f);
-    }
-
-    [HarmonyPatch(typeof(Player), nameof(Player.AttachStop))]
-    [HarmonyPrefix]
-    public static void ClearCacheOnDetach(Player __instance)
-    {
-        if (!VBNetTweaks.c_ModuleShipSync.Value) return;
-        RemoveFromCache(__instance.GetPlayerID());
-    }
-
-    [HarmonyPatch(typeof(Player), nameof(Player.OnDestroy))]
-    [HarmonyPrefix]
-    public static void ClearCacheOnDestroy(Player __instance)
-    {
-        if (!VBNetTweaks.c_ModuleShipSync.Value) return;
-        RemoveFromCache(__instance.GetPlayerID());
-    }
-
-    private static void RemoveFromCache(long id)
-    {
-        if (_playerPosVelocities.ContainsKey(id)) _playerPosVelocities.Remove(id);
-    }*/
 }

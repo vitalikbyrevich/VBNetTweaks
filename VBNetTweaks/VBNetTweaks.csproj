@@ -58,7 +58,7 @@
     <None Include="0\StatusEffectVFXManager.cs" />
     <None Include="0\VFXCleanupPatch.cs" />
     <Compile Include="GlobalUsings.cs" />
-    <Compile Include="MapPositionSync.cs" />
+    <Compile Include="Patches\MapPositionSync.cs" />
     <Compile Include="Patches\NetworkSyncPatches.cs" />
     <None Include="0\VFXOrphanCleanup.cs" />
     <Compile Include="Patches\ServerReliabilityPatches.cs" />
