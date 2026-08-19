@@ -33,4 +33,7 @@ public static class SyncTuning
     public static float GetTeleportRotationThreshold() { RefreshIfNeeded(); return _teleportRotation; }
     
     public static float GetTimeoutConnected() => Mathf.Clamp(VBNetTweaks.c_SteamTimeoutConnected.Value, 5000f, 600000f);
+
+    public static float GetSendInterval() => Mathf.Clamp(VBNetTweaks.c_MapPositionSendInterval.Value, 0.1f, 2f);
+    public static int GetQueueLimit() => Mathf.Max(4096, Helper.IsServer() ? VBNetTweaks.c_ZDOQueueLimit_S.Value : VBNetTweaks.c_ZDOQueueLimit.Value);
 }

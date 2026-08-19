@@ -61,7 +61,7 @@
     <Compile Include="Patches\MapPositionSync.cs" />
     <Compile Include="Patches\NetworkSyncPatches.cs" />
     <None Include="0\VFXOrphanCleanup.cs" />
-    <Compile Include="Patches\ServerReliabilityPatches.cs" />
+    <None Include="Patches\ServerReliabilityPatches.cs" />
     <Compile Include="Patches\ShipSyncFix.cs" />
     <Compile Include="Patches\ZSteamSocket_Patchs.cs" />
     <None Include="0\ZDODeltaSync.cs" />

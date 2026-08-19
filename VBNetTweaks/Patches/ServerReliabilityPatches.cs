@@ -5,11 +5,13 @@ namespace VBNetTweaks.Patches
     [HarmonyPatch]
     public static class ServerReliabilityPatches
     {
-        private static readonly List<ZDO> _staleSceneKeys = new List<ZDO>();
         private static readonly AccessTools.FieldRef<ZNetScene, Dictionary<ZDO, ZNetView>> _instancesRef = AccessTools.FieldRefAccess<ZNetScene, Dictionary<ZDO, ZNetView>>("m_instances");
-        private static float _nextCleanupTime = 0f;
+        private static float _nextCleanupTime;
         private static readonly HashSet<ZDOID> _dedupSeen = new HashSet<ZDOID>();
         
+        private static readonly List<KeyValuePair<ZDO, ZNetView>> _sceneKeep = new List<KeyValuePair<ZDO, ZNetView>>();
+        private static readonly List<ZNetView> _sceneOrphans = new List<ZNetView>();
+
         [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.RemoveObjects))]
         [HarmonyPrefix]
         private static void RemoveObjects_CleanupStaleInstances(ZNetScene __instance)
@@ -17,55 +19,40 @@ namespace VBNetTweaks.Patches
             if (!Helper.IsServer()) return;
             if (Time.time < _nextCleanupTime) return;
             _nextCleanupTime = Time.time + 10f;
-            
+
             try
             {
                 var instances = _instancesRef(__instance);
                 if (instances == null || instances.Count == 0) return;
-                
-                _staleSceneKeys.Clear();
+
+                _sceneKeep.Clear();
+                _sceneOrphans.Clear();
+
                 foreach (var kvp in instances)
                 {
                     ZDO key = kvp.Key;
                     ZNetView view = kvp.Value;
-                    
-                    bool isStale = false;
-                    if (key == null || !key.IsValid()) isStale = true;
-                    else if (!view) isStale = true;
-                    else
+
+                    if (!key.IsValid())
                     {
-                        try
-                        {
-                            ZDO viewZdo = view.GetZDO();
-                            if (viewZdo == null || viewZdo != key) isStale = true;
-                        }
-                        catch { isStale = true; }
+                        if (view) _sceneOrphans.Add(view);
+                        continue;
                     }
-                    
-                    if (isStale) _staleSceneKeys.Add(key);
+                    if (!view) continue;
+
+                    _sceneKeep.Add(kvp);
                 }
-                
-                int removed = 0;
-                foreach (ZDO staleKey in _staleSceneKeys)
-                {
-                    if (instances.TryGetValue(staleKey, out ZNetView staleView))
-                    {
-                        instances.Remove(staleKey);
-                        removed++;
-                        
-                        if (staleView)
-                        {
-                            try
-                            {
-                                if (staleView.GetZDO() == null) Object.Destroy(staleView.gameObject);
-                            }
-                            catch { /* ignore destroy errors */ }
-                        }
-                    }
-                }
-                
-                if (removed > 0 && VBNetTweaks.c_DebugEnabled.Value) Helper.LogDebug($"[Reliability] Cleaned {removed} stale scene instances before RemoveObjects");
-                    
+
+                int dropped = instances.Count - _sceneKeep.Count;
+                if (dropped <= 0) return;
+
+                instances.Clear();
+                foreach (var kvp in _sceneKeep) instances[kvp.Key] = kvp.Value;
+
+                for (int i = 0; i < _sceneOrphans.Count; i++)
+                    if (_sceneOrphans[i]) Object.Destroy(_sceneOrphans[i].gameObject);
+
+                Helper.LogDebug($"[Reliability] Scene instances rebuilt: dropped {dropped}, destroyed {_sceneOrphans.Count} orphans");
             }
             catch (Exception ex)
             {
@@ -73,7 +60,8 @@ namespace VBNetTweaks.Patches
             }
             finally
             {
-                _staleSceneKeys.Clear();
+                _sceneKeep.Clear();
+                _sceneOrphans.Clear();
             }
         }
 
@@ -85,7 +73,7 @@ namespace VBNetTweaks.Patches
     
             try
             {
-                _dedupSeen.Clear(); // Очищаем без аллокации
+                _dedupSeen.Clear();
                 int writeIdx = 0;
         
                 for (int i = 0; i < toSync.Count; i++)

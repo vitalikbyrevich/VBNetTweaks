@@ -3,122 +3,60 @@
     [HarmonyPatch]
     public static class MapPositionSync
     {
-        private static CustomRPC _mapPositionRPC;
-        private static float _mapPosTimer;
-        private static readonly Dictionary<ZDOID, MapTrackData> _mapTracks = new();
-
-        public static void Initialize()
+        private class PlayerTrackData
         {
-            if (_mapPositionRPC != null) return;
-            
-            _mapPositionRPC = NetworkManager.Instance.AddRPC("VBNet_MapPositions", OnServerReceiveMapPos, OnClientReceiveMapPos);
-            Helper.LogDebug("[MapPositionSync] RPC initialized");
+            public Vector3 lastRealPosition;
+            public Vector3 lastRealVelocity;
+            public Vector3 smoothPosition;
+            public Vector3 smoothVelocity;
+            public float lastUpdateTime;
+            public float teleportEndTime;
         }
 
-        [HarmonyPatch(typeof(ZNet), nameof(ZNet.Update))]
-        [HarmonyPostfix]
-        static void ZNet_Update_MapPos(ZNet __instance)
+        private static readonly Dictionary<long, PlayerTrackData> _playerTracks = new Dictionary<long, PlayerTrackData>();
+        private static int _lastCleanupFrame;
+        
+        [HarmonyPatch(typeof(ZNet), nameof(ZNet.SendPeriodicData))]
+        [HarmonyTranspiler]
+        private static IEnumerable<CodeInstruction> SendPeriodicData_Transpiler(IEnumerable<CodeInstruction> instructions)
         {
-            if (!VBNetTweaks.c_ModuleMapPositionSync.Value) return;
-            if (!__instance.IsServer()) return;
-            if (_mapPositionRPC == null) return;
+            var codes = new List<CodeInstruction>(instructions);
+            bool replaced = false;
 
-            _mapPosTimer += Time.deltaTime;
-    
-            float interval = VBNetTweaks.c_MapPositionSendInterval.Value;
-            if (_mapPosTimer < interval) return;
-            _mapPosTimer = 0f;
-
-            SendMapPositions(__instance);
-        }
-
-        private static void SendMapPositions(ZNet net)
-        {
-            var peers = net.GetPeers();
-            if (peers.Count == 0) return;
-
-            var positions = new List<(ZDOID id, Vector3 pos)>();
-            
-            foreach (var peer in peers)
+            for (int i = 0; i < codes.Count; i++)
             {
-                if (!peer.IsReady()) continue;
-                if (!peer.m_publicRefPos) continue;
-                if (peer.m_characterID.IsNone()) continue;
-                
-                positions.Add((peer.m_characterID, peer.m_refPos));
-            }
-
-            if (positions.Count == 0) return;
-
-            ZPackage pkg = new ZPackage();
-            pkg.Write(positions.Count);
-            
-            foreach (var (id, pos) in positions)
-            {
-                pkg.Write(id);
-                pkg.Write(pos);
-            }
-
-            _mapPositionRPC.SendPackage(ZRoutedRpc.Everybody, pkg);
-            
-            if (VBNetTweaks.c_VerboseLogging.Value) Helper.LogVerbose($"[MapPositionSync] Sent {positions.Count} positions");
-        }
-
-        private static IEnumerator OnServerReceiveMapPos(long sender, ZPackage pkg)
-        {
-            yield break;
-        }
-
-        private static IEnumerator OnClientReceiveMapPos(long sender, ZPackage pkg)
-        {
-            if (!VBNetTweaks.c_ModuleMapPositionSync.Value) yield break;
-            if (Helper.IsServer()) yield break;
-            if (!ZNet.instance) yield break;
-
-            var serverPeer = ZNet.instance.GetServerPeer();
-            if (serverPeer == null || sender != serverPeer.m_uid) yield break;
-
-            try
-            {
-                int count = pkg.ReadInt();
-                float now = Time.time;
-
-                for (int i = 0; i < count; i++)
+                if (codes[i].opcode == OpCodes.Ldc_R4 && codes[i].operand is float f && Math.Abs(f - 2f) < 0.001f)
                 {
-                    ZDOID id = pkg.ReadZDOID();
-                    Vector3 pos = pkg.ReadVector3();
-
-                    if (!_mapTracks.TryGetValue(id, out var track))
-                    {
-                        track = new MapTrackData();
-                        _mapTracks[id] = track;
-                    }
-
-                    track.AddSnapshot(now, pos);
+                    codes[i].opcode = OpCodes.Call;
+                    codes[i].operand = AccessTools.Method(typeof(SyncTuning), nameof(SyncTuning.GetSendInterval));
+                    replaced = true;
                 }
+            }
 
-                if (VBNetTweaks.c_VerboseLogging.Value && count > 0) Helper.LogVerbose($"[MapPositionSync] Received {count} positions");
-            }
-            catch (Exception ex)
-            {
-                Helper.LogDebug($"[MapPositionSync] Error processing positions: {ex.Message}");
-            }
+            if (!replaced) Helper.LogDebug("[MapPositionSync] SendPeriodicData constant 2f not found!");
+
+            return codes;
         }
 
         [HarmonyPatch(typeof(Minimap), nameof(Minimap.UpdatePlayerPins))]
         [HarmonyPostfix]
-        static void Minimap_UpdatePlayerPins_Postfix(Minimap __instance, float dt)
+        private static void UpdatePlayerPins_SmoothPostfix(Minimap __instance, float dt)
         {
-            if (!VBNetTweaks.c_ModuleMapPositionSync.Value) return;
+          //  if (!VBNetTweaks.c_ModuleMapPositionSync.Value) return;
             if (Helper.IsServer()) return;
             if (__instance.m_playerPins == null || __instance.m_tempPlayerInfo == null) return;
 
             int count = Mathf.Min(__instance.m_playerPins.Count, __instance.m_tempPlayerInfo.Count);
             if (count == 0) return;
 
-            float renderTime = Time.time - VBNetTweaks.c_MapInterpolationDelay.Value;
-            float maxPredictionTime = VBNetTweaks.c_MapMaxPredictionTime.Value;
-            float maxPredictionSpeed = VBNetTweaks.c_MapMaxPredictionSpeed.Value;
+            float now = Time.time;
+            float maxSpeed = VBNetTweaks.c_MapMaxPredictionSpeed.Value;
+
+            if (Time.frameCount - _lastCleanupFrame > 600)
+            {
+                _lastCleanupFrame = Time.frameCount;
+                CleanupStaleTracks(now);
+            }
 
             for (int i = 0; i < count; i++)
             {
@@ -127,114 +65,88 @@
 
                 if (!info.m_publicPosition) continue;
 
-                ZDOID id = info.m_characterID;
-                if (id.IsNone()) continue;
+                long playerId = GetPlayerId(info);
+                if (playerId == 0) continue;
 
-                if (_mapTracks.TryGetValue(id, out var track))
+                Vector3 realPosition = info.m_position;
+
+                if (!_playerTracks.TryGetValue(playerId, out var track))
                 {
-                    if (track.TryGetInterpolated(renderTime, maxPredictionTime, maxPredictionSpeed, out Vector3 interpolated)) pin.m_pos = interpolated;
-                    else pin.m_pos = info.m_position;
+                    track = new PlayerTrackData();
+                    _playerTracks[playerId] = track;
+                    track.smoothPosition = realPosition;
+                    track.lastRealPosition = realPosition;
+                    track.lastUpdateTime = now;
+                    pin.m_pos = realPosition;
+                    continue;
                 }
-                else pin.m_pos = info.m_position;
+
+                float deltaTime = now - track.lastUpdateTime;
+                if (deltaTime > 0.001f && deltaTime < 2f)
+                {
+                    Vector3 deltaPos = realPosition - track.lastRealPosition;
+                    float distance = deltaPos.magnitude;
+
+                    if (distance > 50f)
+                    {
+                        track.teleportEndTime = now + 0.2f;
+                        track.lastRealVelocity = Vector3.zero;
+                    }
+                    else if (distance > 0.01f)
+                    {
+                        track.lastRealVelocity = deltaPos / deltaTime;
+                        if (track.lastRealVelocity.magnitude > 100f) track.lastRealVelocity = track.lastRealVelocity.normalized * 100f;
+                    }
+                }
+
+                track.lastRealPosition = realPosition;
+                track.lastUpdateTime = now;
+
+                if (track.teleportEndTime > now)
+                {
+                    pin.m_pos = realPosition;
+                    track.smoothPosition = realPosition;
+                    track.smoothVelocity = Vector3.zero;
+                    continue;
+                }
+
+                Vector3 targetPosition = realPosition;
+                float timeSinceUpdate = now - track.lastUpdateTime;
+                if (timeSinceUpdate > 0.05f && track.lastRealVelocity.magnitude > 0.5f)
+                {
+                    float predictTime = Mathf.Min(timeSinceUpdate, 0.5f);
+                    targetPosition = realPosition + track.lastRealVelocity * predictTime;
+                }
+
+                float distToTarget = Vector3.Distance(track.smoothPosition, targetPosition);
+                float smoothTime = distToTarget > 30f ? 0.01f : distToTarget > 10f ? 0.03f : 0.05f;
+
+                track.smoothPosition = Vector3.SmoothDamp(track.smoothPosition, targetPosition, ref track.smoothVelocity, smoothTime, maxSpeed, dt);
+
+                pin.m_pos = track.smoothPosition;
             }
+        }
+
+        private static long GetPlayerId(ZNet.PlayerInfo info)
+        {
+            if (!info.m_characterID.IsNone()) return info.m_characterID.UserID;
+            if (!string.IsNullOrEmpty(info.m_name)) return info.m_name.GetHashCode();
+            return 0;
+        }
+
+        private static void CleanupStaleTracks(float now)
+        {
+            var toRemove = new List<long>();
+            foreach (var kvp in _playerTracks)
+            {
+                if (now - kvp.Value.lastUpdateTime > 10f) toRemove.Add(kvp.Key);
+            }
+            foreach (var key in toRemove)
+                _playerTracks.Remove(key);
         }
 
         [HarmonyPatch(typeof(ZNet), nameof(ZNet.OnDestroy))]
         [HarmonyPostfix]
-        static void ClearCache() => _mapTracks.Clear();
-
-        private class MapTrackData
-        {
-            public struct Snapshot
-            {
-                public float time;
-                public Vector3 pos;
-            }
-
-            private readonly List<Snapshot> _snapshots = new();
-            private Vector3 _lastRealPos;
-            private float _lastRealChangeTime;
-            private Vector3 _velocity;
-            private const int MAX_SNAPSHOTS = 30;
-
-            public void AddSnapshot(float time, Vector3 pos)
-            {
-                if (_snapshots.Count > 0)
-                {
-                    var last = _snapshots[_snapshots.Count - 1];
-                    
-                    if (last.pos == pos)
-                    {
-                        _snapshots[_snapshots.Count - 1] = new Snapshot { time = time, pos = pos };
-                        return;
-                    }
-
-                    float dt = time - last.time;
-                    if (dt > 0.05f && dt < 5f)
-                    {
-                        Vector3 delta = pos - last.pos;
-                        _velocity = Vector3.ClampMagnitude(delta / dt, 100f);
-                    }
-                    else
-                    {
-                        _velocity = Vector3.zero;
-                    }
-                }
-
-                _snapshots.Add(new Snapshot { time = time, pos = pos });
-
-                while (_snapshots.Count > MAX_SNAPSHOTS)
-                {
-                    _snapshots.RemoveAt(0);
-                }
-
-                _lastRealPos = pos;
-                _lastRealChangeTime = time;
-            }
-
-            public bool TryGetInterpolated(float renderTime, float maxPredictionTime, float maxPredictionSpeed, out Vector3 result)
-            {
-                result = Vector3.zero;
-
-                if (_snapshots.Count == 0) return false;
-
-                if (renderTime <= _snapshots[0].time)
-                {
-                    result = _snapshots[0].pos;
-                    return true;
-                }
-
-                if (renderTime >= _snapshots[_snapshots.Count - 1].time)
-                {
-                    var last = _snapshots[_snapshots.Count - 1];
-                    float extraTime = renderTime - last.time;
-
-                    if (extraTime > maxPredictionTime) extraTime = maxPredictionTime;
-
-                    Vector3 prediction = _velocity * extraTime;
-                    
-                    if (prediction.magnitude > maxPredictionSpeed * extraTime) prediction = prediction.normalized * maxPredictionSpeed * extraTime;
-
-                    result = last.pos + prediction;
-                    return true;
-                }
-
-                for (int i = 1; i < _snapshots.Count; i++)
-                {
-                    if (renderTime <= _snapshots[i].time)
-                    {
-                        var a = _snapshots[i - 1];
-                        var b = _snapshots[i];
-                        
-                        float t = Mathf.InverseLerp(a.time, b.time, renderTime);
-                        result = Vector3.Lerp(a.pos, b.pos, t);
-                        return true;
-                    }
-                }
-
-                result = _snapshots[_snapshots.Count - 1].pos;
-                return true;
-            }
-        }
+        private static void ClearTracks() => _playerTracks.Clear();
     }
 }

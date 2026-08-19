@@ -74,7 +74,7 @@ public static class ShipSyncFix
     [HarmonyPrefix]
     static bool ApplyControlls_Prefix(Ship __instance, Vector3 dir)
     {
-        if (!VBNetTweaks.c_ModuleShipSync.Value) return true;
+       // if (!VBNetTweaks.c_ModuleShipSync.Value) return true;
 
         bool forward = dir.z > 0.5;
         bool backward = dir.z < -0.5;

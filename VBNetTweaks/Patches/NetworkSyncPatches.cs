@@ -6,7 +6,6 @@
         private static float _teleportBoostEnd = 0f;
         public static void TriggerTeleportWindow() => _teleportBoostEnd = Time.time + 5f;
 
-        public static int GetQueueLimit() => Mathf.Max(4096, Helper.IsServer() ? VBNetTweaks.c_ZDOQueueLimit_S.Value : VBNetTweaks.c_ZDOQueueLimit.Value);
         
         [HarmonyPatch(typeof(ZSyncTransform), nameof(ZSyncTransform.SyncPosition))]
         [HarmonyTranspiler]
@@ -125,7 +124,7 @@
             var codes = new List<CodeInstruction>(instructions);
             int replacedCount = 0;
 
-            var getQueueLimitMethod = AccessTools.Method(typeof(NetworkSyncPatches), nameof(NetworkSyncPatches.GetQueueLimit));
+            var getQueueLimitMethod = AccessTools.Method(typeof(SyncTuning), nameof(SyncTuning.GetQueueLimit));
 
             for (int i = 0; i < codes.Count; i++)
             {
