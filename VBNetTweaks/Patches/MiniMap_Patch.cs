@@ -16,8 +16,7 @@
         public static readonly Dictionary<long, PlayerTrackData> _playerTracks = new Dictionary<long, PlayerTrackData>();
         private static int _lastCleanupFrame;
 
-        [HarmonyPatch(typeof(Minimap), nameof(Minimap.UpdatePlayerPins))]
-        [HarmonyPostfix]
+        [HarmonyPatch(typeof(Minimap), nameof(Minimap.UpdatePlayerPins)), HarmonyPostfix]
         private static void UpdatePlayerPins_SmoothPostfix(Minimap __instance, float dt)
         {
             if (!VBNetTweaks.c_ModuleMapPositionSync.Value) return;
@@ -119,8 +118,7 @@
             {
                 if (now - kvp.Value.lastUpdateTime > 10f) toRemove.Add(kvp.Key);
             }
-            foreach (var key in toRemove)
-                _playerTracks.Remove(key);
+            foreach (var key in toRemove) _playerTracks.Remove(key);
         }
     }
 }

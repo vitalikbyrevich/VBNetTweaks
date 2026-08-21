@@ -39,8 +39,7 @@
             }
         }
         
-        [HarmonyTranspiler]
-        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.Update))]
+        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.Update)), HarmonyTranspiler]
         private static IEnumerable<CodeInstruction> ZDOManUpdateTranspiler(IEnumerable<CodeInstruction> instructions)
         {
             CodeMatcher codeMatcher = new CodeMatcher(instructions).Start();

@@ -20,7 +20,7 @@ namespace VBNetTweaks
     public class VBNetTweaks : BaseUnityPlugin
     {
         private const string ModName = "VBNetTweaks";
-        private const string ModVersion = "0.4.1.6";
+        private const string ModVersion = "0.4.1.7";
         private const string ModGUID = "VitByr.VBNetTweaks";
         public static VBNetTweaks Instance { get; private set; }
         public CustomRPC _configSyncRPC;
@@ -67,7 +67,7 @@ namespace VBNetTweaks
             InitClientConfigs();
 
             c_ModEnabled = _clientConfig.BindConfig("00 - Master", "ModEnabled", true, c_ConfigLanguage.Value == Language.Russian ? "Полностью включить/выключить мод VBNetTweaks" : "Completely enable/disable VBNetTweaks mod", synced: true);
-            c_TargetFPS = _clientConfig.BindConfig("00 - Master", "TargetFPS", 128, c_ConfigLanguage.Value == Language.Russian ? "Целевой FPS для сервера (только для выделенного сервера)" : "Target FPS for server (dedicated only)", synced: false);
+            c_TargetFPS = _clientConfig.BindConfig("00 - Master", "TargetFPS", 120, c_ConfigLanguage.Value == Language.Russian ? "Целевой FPS для сервера (только для выделенного сервера)" : "Target FPS for server (dedicated only)", synced: false);
             
             if (!c_ModEnabled.Value) return;
 

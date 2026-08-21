@@ -3,8 +3,7 @@
 [HarmonyPatch]
 public class ZNet_Patch
 {
-    [HarmonyPatch(typeof(ZNet), nameof(ZNet.SendPeriodicData))]
-    [HarmonyTranspiler]
+    [HarmonyPatch(typeof(ZNet), nameof(ZNet.SendPeriodicData)), HarmonyTranspiler]
     private static IEnumerable<CodeInstruction> SendPeriodicData_Transpiler(IEnumerable<CodeInstruction> instructions)
     {
         var codes = new List<CodeInstruction>(instructions);
@@ -25,15 +24,13 @@ public class ZNet_Patch
         return codes;
     }
 
-    [HarmonyPostfix]
-    [HarmonyPatch(typeof(ZNet), nameof(ZNet.Start))]
+    [HarmonyPatch(typeof(ZNet), nameof(ZNet.Start)), HarmonyPostfix]
     private static void ZNet_Start_Patch()
     {
         if (Helper.IsServer()) Application.targetFrameRate = VBNetTweaks.c_TargetFPS.Value;
     }
     
 
-    [HarmonyPatch(typeof(ZNet), nameof(ZNet.OnDestroy))]
-    [HarmonyPostfix]
+    [HarmonyPatch(typeof(ZNet), nameof(ZNet.OnDestroy)), HarmonyPostfix]
     private static void ClearTracks() => MiniMap_Patch._playerTracks.Clear();
 }
