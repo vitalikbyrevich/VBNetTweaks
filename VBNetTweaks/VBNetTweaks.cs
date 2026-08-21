@@ -32,6 +32,7 @@ namespace VBNetTweaks
 
         public static ConfigEntry<bool> c_DebugEnabled;
         public static ConfigEntry<bool> c_VerboseLogging;
+        public static ConfigEntry<int> c_TargetFPS;
 
         public static ConfigEntry<bool> c_ModuleSteamOptimizations;
         public static ConfigEntry<bool> c_ModuleZDOOptimization;
@@ -66,7 +67,8 @@ namespace VBNetTweaks
             InitClientConfigs();
 
             c_ModEnabled = _clientConfig.BindConfig("00 - Master", "ModEnabled", true, c_ConfigLanguage.Value == Language.Russian ? "Полностью включить/выключить мод VBNetTweaks" : "Completely enable/disable VBNetTweaks mod", synced: true);
-
+            c_TargetFPS = _clientConfig.BindConfig("00 - Master", "TargetFPS", 128, c_ConfigLanguage.Value == Language.Russian ? "Целевой FPS для сервера (только для выделенного сервера)" : "Target FPS for server (dedicated only)", synced: false);
+            
             if (!c_ModEnabled.Value) return;
 
             _configSyncRPC = NetworkManager.Instance.AddRPC("VBNetTweaks_ConfigSync", OnAdminConfigSync, OnClientConfigSync);
@@ -129,10 +131,10 @@ namespace VBNetTweaks
             c_PeersPerUpdate_S = _clientConfig.BindConfig(serverSection, "PeersPerUpdate", 10, c_ConfigLanguage.Value == Language.Russian 
                 ? "Количество пиров за один цикл отправки. Vanilla = 1." : "Peers processed per send cycle. Vanilla = 1.", synced: true);
             
-            c_NetRatePhysics = _clientConfig.BindConfig(serverSection, "NetRatePhysics", 8f, c_ConfigLanguage.Value == Language.Russian 
+            c_NetRatePhysics = _clientConfig.BindConfig(serverSection, "NetRatePhysics", 10f, c_ConfigLanguage.Value == Language.Russian 
                 ? "Частота обновления физических объектов (предметы, снаряды). Vanilla = 20" : "Update rate for physics objects (items, projectiles). Vanilla = 20", synced: true);
 
-            c_NetRateNPC = _clientConfig.BindConfig(serverSection, "NetRateNPC", 8f, c_ConfigLanguage.Value == Language.Russian 
+            c_NetRateNPC = _clientConfig.BindConfig(serverSection, "NetRateNPC", 10f, c_ConfigLanguage.Value == Language.Russian 
                 ? "Частота обновления мобов. Vanilla = 20" : "Update rate for mobs. Vanilla = 20", synced: true);
 
             c_Vec3CullSize = _clientConfig.BindConfig(serverSection, "Vec3CullSize", 0.05f, c_ConfigLanguage.Value == Language.Russian 

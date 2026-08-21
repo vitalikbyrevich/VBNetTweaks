@@ -29,7 +29,7 @@ public class ZNet_Patch
     [HarmonyPatch(typeof(ZNet), nameof(ZNet.Start))]
     private static void ZNet_Start_Patch()
     {
-        if (Helper.IsServer()) Application.targetFrameRate = VBNetTweaks.Instance.Config.Bind("General", "Target FPS", 128, "Target FPS").Value;
+        if (Helper.IsServer()) Application.targetFrameRate = VBNetTweaks.c_TargetFPS.Value;
     }
     
 

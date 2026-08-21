@@ -41,23 +41,18 @@
         
         [HarmonyTranspiler]
         [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.Update))]
-        private static IEnumerable<CodeInstruction> Update_Transpiler(IEnumerable<CodeInstruction> instructions)
+        private static IEnumerable<CodeInstruction> ZDOManUpdateTranspiler(IEnumerable<CodeInstruction> instructions)
         {
-            if (!VBNetTweaks.c_ModuleZDOOptimization.Value) return instructions;
-
-            var methodToReplace = AccessTools.Method(typeof(ZDOMan), nameof(ZDOMan.SendZDOToPeers2));
-            var replacementMethod = AccessTools.Method(typeof(ZDOMan_Patch), nameof(OptimizedSendZDOToPeers));
-
-            var matcher = new CodeMatcher(instructions).MatchForward(false, new CodeMatch(OpCodes.Call, methodToReplace), new CodeMatch(OpCodes.Callvirt, methodToReplace));
-
-            if (!matcher.IsValid)
+            CodeMatcher codeMatcher = new CodeMatcher(instructions).Start();
+            codeMatcher.MatchStartForward(new CodeMatch(OpCodes.Call, AccessTools.Method(typeof(ZDOMan), nameof(ZDOMan.SendZDOToPeers2))));
+            if (codeMatcher.IsInvalid)
             {
-                Helper.LogDebug("Failed to find SendZDOToPeers2 call in ZDOMan.Update!");
+                Helper.LogDebug("WARNING: SendZDOToPeers2 not found");
                 return instructions;
             }
-
-            matcher.SetInstruction(new CodeInstruction(OpCodes.Call, replacementMethod));
-            return matcher.InstructionEnumeration();
+            else Helper.LogDebug("SendZDOToPeers2 success replace to OptimizedSendZDOToPeers");
+            codeMatcher.SetOperandAndAdvance(AccessTools.Method(typeof(ZDOMan_Patch), nameof(ZDOMan_Patch.OptimizedSendZDOToPeers)));
+            return codeMatcher.InstructionEnumeration();
         }
     }
 }
