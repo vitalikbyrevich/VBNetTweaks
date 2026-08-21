@@ -1,7 +1,7 @@
 ﻿namespace VBNetTweaks.Patches;
 
 [HarmonyPatch]
-public static class ShipSyncFix
+public static class Ship_Patch
 {
     private static float _lastDamageLog;
 
@@ -9,6 +9,7 @@ public static class ShipSyncFix
     [HarmonyPrefix]
     public static void OnControlGranted(ShipControlls __instance, long sender, bool granted)
     {
+        if (!VBNetTweaks.c_ModuleShipSync.Value) return;
         if (!granted) return;
         if (!__instance.m_nview.IsValid()) return;
     
@@ -34,6 +35,7 @@ public static class ShipSyncFix
     [HarmonyPatch(typeof(Ship), nameof(Ship.UpdateWaterForce))]
     static bool UpdateWaterForce_Prefix(Ship __instance, ref float depth, ref float time)
     {
+        if (!VBNetTweaks.c_ModuleShipSync.Value) return true;
         float num = depth - __instance.m_lastDepth;
         float num2 = time - __instance.m_lastUpdateWaterForceTime;
         __instance.m_lastDepth = depth;
@@ -42,7 +44,6 @@ public static class ShipSyncFix
         if (num2 <= 0.001f) return false;
 
         float num3 = num / num2;
-
         bool isHardImpact = num3 <= 0f && Mathf.Abs(num3) > __instance.m_minWaterImpactForce && time - __instance.m_lastWaterImpactTime > __instance.m_minWaterImpactInterval;
 
         if (isHardImpact)
@@ -74,20 +75,18 @@ public static class ShipSyncFix
     [HarmonyPrefix]
     static bool ApplyControlls_Prefix(Ship __instance, Vector3 dir)
     {
-       // if (!VBNetTweaks.c_ModuleShipSync.Value) return true;
+        if (!VBNetTweaks.c_ModuleShipSync.Value) return true;
 
         bool forward = dir.z > 0.5;
         bool backward = dir.z < -0.5;
 
         if (forward && !__instance.m_forwardPressed) __instance.Forward();
-
         if (backward && !__instance.m_backwardPressed) __instance.Backward();
 
         __instance.m_forwardPressed = forward;
         __instance.m_backwardPressed = backward;
 
         float fixedDeltaTime = Time.fixedDeltaTime;
-
         float num = Mathf.Lerp(0.5f, 1f, Mathf.Abs(__instance.m_rudderValue));
 
         __instance.m_rudder = dir.x * num;
@@ -99,7 +98,6 @@ public static class ShipSyncFix
             __instance.m_sendRudderTime = Time.time;
             if (!__instance.m_nview.IsOwner()) __instance.m_nview.InvokeRPC("Rudder", __instance.m_rudderValue);
         }
-
         return false;
     }
 }

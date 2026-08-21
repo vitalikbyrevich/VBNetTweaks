@@ -1,9 +1,9 @@
 ﻿namespace VBNetTweaks.Patches
 {
     [HarmonyPatch]
-    public static class MapPositionSync
+    public static class MiniMap_Patch
     {
-        private class PlayerTrackData
+        public class PlayerTrackData
         {
             public Vector3 lastRealPosition;
             public Vector3 lastRealVelocity;
@@ -13,36 +13,14 @@
             public float teleportEndTime;
         }
 
-        private static readonly Dictionary<long, PlayerTrackData> _playerTracks = new Dictionary<long, PlayerTrackData>();
+        public static readonly Dictionary<long, PlayerTrackData> _playerTracks = new Dictionary<long, PlayerTrackData>();
         private static int _lastCleanupFrame;
-        
-        [HarmonyPatch(typeof(ZNet), nameof(ZNet.SendPeriodicData))]
-        [HarmonyTranspiler]
-        private static IEnumerable<CodeInstruction> SendPeriodicData_Transpiler(IEnumerable<CodeInstruction> instructions)
-        {
-            var codes = new List<CodeInstruction>(instructions);
-            bool replaced = false;
-
-            for (int i = 0; i < codes.Count; i++)
-            {
-                if (codes[i].opcode == OpCodes.Ldc_R4 && codes[i].operand is float f && Math.Abs(f - 2f) < 0.001f)
-                {
-                    codes[i].opcode = OpCodes.Call;
-                    codes[i].operand = AccessTools.Method(typeof(SyncTuning), nameof(SyncTuning.GetSendInterval));
-                    replaced = true;
-                }
-            }
-
-            if (!replaced) Helper.LogDebug("[MapPositionSync] SendPeriodicData constant 2f not found!");
-
-            return codes;
-        }
 
         [HarmonyPatch(typeof(Minimap), nameof(Minimap.UpdatePlayerPins))]
         [HarmonyPostfix]
         private static void UpdatePlayerPins_SmoothPostfix(Minimap __instance, float dt)
         {
-          //  if (!VBNetTweaks.c_ModuleMapPositionSync.Value) return;
+            if (!VBNetTweaks.c_ModuleMapPositionSync.Value) return;
             if (Helper.IsServer()) return;
             if (__instance.m_playerPins == null || __instance.m_tempPlayerInfo == null) return;
 
@@ -144,9 +122,5 @@
             foreach (var key in toRemove)
                 _playerTracks.Remove(key);
         }
-
-        [HarmonyPatch(typeof(ZNet), nameof(ZNet.OnDestroy))]
-        [HarmonyPostfix]
-        private static void ClearTracks() => _playerTracks.Clear();
     }
 }
