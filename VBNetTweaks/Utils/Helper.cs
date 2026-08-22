@@ -1,3 +1,5 @@
+using UnityEngine.Rendering;
+
 namespace VBNetTweaks.Utils;
 
 public static class Helper
@@ -11,7 +13,7 @@ public static class Helper
     
     public static float GetMapPositionSendInterval() => Mathf.Clamp(VBNetTweaks.c_MapPositionSendInterval.Value, 0.1f, 2f);
     
-    
+    public static bool IsDedicated() => SystemInfo.graphicsDeviceType == GraphicsDeviceType.Null;
     public static bool IsServer() => ZNet.instance && ZNet.instance.IsServer();
     
     public static void LogDebug(string message)

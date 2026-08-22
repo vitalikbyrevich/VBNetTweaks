@@ -20,7 +20,7 @@
         private static void UpdatePlayerPins_SmoothPostfix(Minimap __instance, float dt)
         {
             if (!VBNetTweaks.c_ModuleMapPositionSync.Value) return;
-            if (Helper.IsServer()) return;
+            if (Helper.IsDedicated()) return;
             if (__instance.m_playerPins == null || __instance.m_tempPlayerInfo == null) return;
 
             int count = Mathf.Min(__instance.m_playerPins.Count, __instance.m_tempPlayerInfo.Count);

@@ -39,7 +39,6 @@
                 SetConfigInt(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendRateMax, maxRate);
 
                 // === ПРИЁМНЫЕ БУФЕРЫ (Защита от дропов при лагах CPU) ===
-                // 47 = RecvBufferSize (байты). Должен быть >= 48 * средний_размер_пакета
                 SetConfigInt((ESteamNetworkingConfigValue)47, sendBuffer);
                 Helper.LogDebug($"RecvBufferSize: {sendBuffer / 1024}KB");
 
@@ -62,51 +61,49 @@
                 Helper.LogDebug($"Failed to apply Steam buffers: {e.Message}");
             }
         }
+        
+        [HarmonyPatch(typeof(ZSteamSocket), nameof(ZSteamSocket.Send)),HarmonyTranspiler]
+        private static IEnumerable<CodeInstruction> Send_Transpiler(IEnumerable<CodeInstruction> instructions) => ReplaceSendQueuedPackages(instructions);
 
-   /*    [HarmonyPatch]
-        private static class PatchMethods
+        [HarmonyPatch(typeof(ZSteamSocket), nameof(ZSteamSocket.Flush)),HarmonyTranspiler]
+        private static IEnumerable<CodeInstruction> Flush_Transpiler(IEnumerable<CodeInstruction> instructions) => ReplaceSendQueuedPackages(instructions);
+
+        [HarmonyPatch(typeof(ZSteamSocket), nameof(ZSteamSocket.Update)),HarmonyTranspiler]
+        private static IEnumerable<CodeInstruction> Update_Transpiler(IEnumerable<CodeInstruction> instructions) => ReplaceSendQueuedPackages(instructions);
+
+        private static IEnumerable<CodeInstruction> ReplaceSendQueuedPackages(IEnumerable<CodeInstruction> instructions)
         {
-            [HarmonyTargetMethods]
-            private static IEnumerable<MethodBase> Target()
+            MethodInfo operand = AccessTools.Method(typeof(ZSteamSocket_Patch), Helper.IsDedicated() ? nameof(ZSteamSocket_Patch.Replacement_Server) : nameof(ZSteamSocket_Patch.Replacement_Client));
+            MethodInfo operand2 = AccessTools.Method(typeof(ZSteamSocket), nameof(ZSteamSocket.SendQueuedPackages));
+            CodeMatcher codeMatcher = new CodeMatcher(instructions);
+            codeMatcher.MatchForward(false, new CodeMatch(OpCodes.Call, operand2));
+            if (!codeMatcher.IsValid)
             {
-                yield return AccessTools.Method(typeof(ZSteamSocket), nameof(ZSteamSocket.Send), new Type[1] { typeof(ZPackage) });
-                yield return AccessTools.Method(typeof(ZSteamSocket), nameof(ZSteamSocket.Flush));
-                yield return AccessTools.Method(typeof(ZSteamSocket), nameof(ZSteamSocket.Update));
+                codeMatcher.Start();
+                codeMatcher.MatchForward(false, new CodeMatch(OpCodes.Callvirt, operand2));
             }
 
-            [HarmonyTranspiler]
-            private static IEnumerable<CodeInstruction> FixingIssue(IEnumerable<CodeInstruction> code)
+            if (!codeMatcher.IsValid)
             {
-                MethodInfo operand = AccessTools.Method(typeof(ZSteamSocket_Patch), Helper.IsServer() ? nameof(ZSteamSocket_Patch.Replacement_Server) : nameof(ZSteamSocket_Patch.Replacement_Client));
-                MethodInfo operand2 = AccessTools.Method(typeof(ZSteamSocket), nameof(ZSteamSocket.SendQueuedPackages));
-                CodeMatcher codeMatcher = new CodeMatcher(code);
-                codeMatcher.MatchForward(false, new CodeMatch(OpCodes.Call, operand2));
-                if (!codeMatcher.IsValid)
-                {
-                    codeMatcher.Start();
-                    codeMatcher.MatchForward(false, new CodeMatch(OpCodes.Callvirt, operand2));
-                }
-
-                if (!codeMatcher.IsValid)
-                {
-                    Debug.LogError("NetworkSpeedup: Failed to find ZSteamSocket.SendQueuedPackages call");
-                    return codeMatcher.InstructionEnumeration();
-                }
-
-                codeMatcher.SetInstruction(new CodeInstruction(OpCodes.Call, operand));
+                Debug.LogError("NetworkSpeedup: Failed to find ZSteamSocket.SendQueuedPackages call");
                 return codeMatcher.InstructionEnumeration();
             }
+
+            codeMatcher.SetInstruction(new CodeInstruction(OpCodes.Call, operand));
+            return codeMatcher.InstructionEnumeration();
         }
         
         private unsafe static void Replacement_Client(ZSteamSocket socket)
         {
-            if (!socket.IsConnected())
-            {
-                return;
-            }
+            if (!socket.IsConnected() || socket.m_con == HSteamNetConnection.Invalid) return;
             while (socket.m_sendQueue.Count > 0)
             {
                 byte[] array = socket.m_sendQueue.Peek();
+                if (array == null || array.Length == 0)
+                {
+                    socket.m_sendQueue.Dequeue();
+                    continue;
+                }
                 EResult eResult;
                 fixed (byte* ptr = array)
                 {
@@ -124,14 +121,16 @@
 
         private unsafe static void Replacement_Server(ZSteamSocket socket)
         {
-            if (!socket.IsConnected())
-            {
-                return;
-            }
+            if (!socket.IsConnected()) return;
             while (socket.m_sendQueue.Count > 0)
             {
                 byte[] array = socket.m_sendQueue.Peek();
                 EResult eResult;
+                if (array == null || array.Length == 0)
+                {
+                    socket.m_sendQueue.Dequeue();
+                    continue;
+                }
                 fixed (byte* ptr = array)
                 {
                     eResult = SteamGameServerNetworkingSockets.SendMessageToConnection(socket.m_con, (IntPtr)ptr, (uint)array.Length, 8, out var _);
@@ -144,7 +143,7 @@
                 socket.m_totalSent += array.Length;
                 socket.m_sendQueue.Dequeue();
             }
-        }*/
+        }
 
         private static void SetConfigFloat(ESteamNetworkingConfigValue config, float value)
         {

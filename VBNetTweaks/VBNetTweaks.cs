@@ -20,7 +20,7 @@ namespace VBNetTweaks
     public class VBNetTweaks : BaseUnityPlugin
     {
         private const string ModName = "VBNetTweaks";
-        private const string ModVersion = "0.4.1.7";
+        private const string ModVersion = "0.4.1.10";
         private const string ModGUID = "VitByr.VBNetTweaks";
         public static VBNetTweaks Instance { get; private set; }
         public CustomRPC _configSyncRPC;
@@ -79,12 +79,14 @@ namespace VBNetTweaks
             _harmony = new Harmony(ModGUID);
             
             _harmony.PatchAll(typeof(MiniMap_Patch));
-            _harmony.PatchAll(typeof(Ship_Patch));
+        //    _harmony.PatchAll(typeof(Ship_Patch));
             _harmony.PatchAll(typeof(ZDOMan_Patch));
             _harmony.PatchAll(typeof(ZDORevision_Patch));
             _harmony.PatchAll(typeof(ZNet_Patch));
             _harmony.PatchAll(typeof(ZNetScene_Patch));
             _harmony.PatchAll(typeof(ZSteamSocket_Patch));
+            _harmony.PatchAll(typeof(ZSyncTransform_Patch));
+        //    _harmony.PatchAll(typeof(PlayerCache));
 
             Helper.LogDebug("Режим отладки включен");
         }
@@ -226,7 +228,7 @@ namespace VBNetTweaks
 
         private IEnumerator OnAdminConfigSync(long sender, ZPackage pkg)
         {
-            if (Helper.IsServer())
+            if (Helper.IsDedicated())
             {
                 ZPackage serverConfigPkg = BuildConfigPackage();
                 byte[] data = serverConfigPkg.GetArray();
@@ -258,7 +260,7 @@ namespace VBNetTweaks
             ConfigFileWatcher GeneralConfigWatcher = new ConfigFileWatcher(_clientConfig, reloadDelay: 1000);
             GeneralConfigWatcher.OnConfigFileReloaded += () =>
             {
-                if (!Helper.IsServer()) return;
+                if (!Helper.IsDedicated()) return;
 
                 Helper.LogDebug("Server config changed, broadcasting to all clients");
                 StartCoroutine(ApplyServerConfigChanges());

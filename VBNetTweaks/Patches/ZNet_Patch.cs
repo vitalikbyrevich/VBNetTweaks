@@ -27,10 +27,9 @@ public class ZNet_Patch
     [HarmonyPatch(typeof(ZNet), nameof(ZNet.Start)), HarmonyPostfix]
     private static void ZNet_Start_Patch()
     {
-        if (Helper.IsServer()) Application.targetFrameRate = VBNetTweaks.c_TargetFPS.Value;
+        if (Helper.IsDedicated()) Application.targetFrameRate = VBNetTweaks.c_TargetFPS.Value;
     }
     
-
     [HarmonyPatch(typeof(ZNet), nameof(ZNet.OnDestroy)), HarmonyPostfix]
     private static void ClearTracks() => MiniMap_Patch._playerTracks.Clear();
 }
