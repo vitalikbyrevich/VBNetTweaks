@@ -58,12 +58,12 @@
     <None Include="0\VFXCleanupPatch.cs" />
     <Compile Include="GlobalUsings.cs" />
     <Compile Include="Patches\MiniMap_Patch.cs" />
-    <Compile Include="Patches\ZSyncTransform_Patch.cs" />
+    <None Include="Patches\Owner_Patch.cs" />
     <Compile Include="Patches\ZDOMan_Patch.cs" />
     <Compile Include="Patches\ZDORevision_Patch.cs" />
     <Compile Include="Patches\ZNetScene_Patch.cs" />
     <None Include="0\VFXOrphanCleanup.cs" />
-    <None Include="Patches\Ship_Patch.cs" />
+    <Compile Include="Patches\Ship_Patch.cs" />
     <Compile Include="Patches\ZNet_Patch.cs" />
     <Compile Include="Patches\ZSteamSocket_Patch.cs" />
     <None Include="0\ZDODeltaSync.cs" />
@@ -100,7 +100,7 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <None Include="App.config" />
     <None Include="packages.config" />
-    <None Include="Patches\PlayerCache.cs" />
+    <Compile Include="Patches\PlayerCache.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="0Harmony">

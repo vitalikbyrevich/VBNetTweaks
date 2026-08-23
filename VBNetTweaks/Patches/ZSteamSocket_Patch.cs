@@ -11,6 +11,7 @@
             var codes = new List<CodeInstruction>(instructions);
 
             bool timeoutReplaced = false;
+            bool rateReplaced = false;
             for (int i = 0; i < codes.Count; i++)
             {
                 if (codes[i].opcode == OpCodes.Ldc_R4 && codes[i].operand is float f && Math.Abs(f - 30000f) < 0.001f)
@@ -18,14 +19,23 @@
                     codes[i].opcode = OpCodes.Call;
                     codes[i].operand = AccessTools.Method(typeof(Helper), nameof(Helper.GetTimeoutConnected));
                     timeoutReplaced = true;
+                    Helper.LogDebug($"TimeoutConnected: 30000 -> {Helper.GetTimeoutConnected()}");
+                }
+                if (codes[i].opcode == OpCodes.Ldc_I4 && codes[i].operand is int intValue && intValue == 153600)
+                {
+                    codes[i].opcode = OpCodes.Call;
+                    codes[i].operand = AccessTools.Method(typeof(Helper), nameof(Helper.GetSteamSendRateMaxKB));
+                    rateReplaced = true;
+                    Helper.LogDebug($"SendRate: 153600 -> {Helper.GetSteamSendRateMaxKB()}");
                 }
             }
 
             if (!timeoutReplaced) Helper.LogDebug("TimeoutConnected constant 30000 not found!");
+            if (!rateReplaced) Helper.LogDebug("SendRate constant 153600 not found!");
 
             return codes;
         }
-
+        
         [HarmonyPatch(typeof(ZSteamSocket), nameof(ZSteamSocket.RegisterGlobalCallbacks)), HarmonyPostfix]
         private static void ApplySteamBuffers()
         {
@@ -33,10 +43,7 @@
             try
             {
                 int sendBuffer = Helper.GetSteamSendBufferSizeKB();
-                int maxRate = Helper.GetSteamSendRateMaxKB();
                 int recvBuffer = Helper.GetSteamRecvBufferMessages();
-
-                SetConfigInt(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendRateMax, maxRate);
 
                 // === ПРИЁМНЫЕ БУФЕРЫ (Защита от дропов при лагах CPU) ===
                 SetConfigInt((ESteamNetworkingConfigValue)47, sendBuffer);

@@ -8,6 +8,7 @@ public static class Helper
     public static int GetSteamSendBufferSizeKB() => Math.Max(512 * 1024, VBNetTweaks.c_SteamSendBufferSizeKB.Value * 1024);
     public static int GetSteamSendRateMaxKB() => Math.Max(128 * 1024, VBNetTweaks.c_SteamSendRateMaxKB.Value * 1024);
     public static int GetSteamRecvBufferMessages() => Mathf.Clamp(VBNetTweaks.c_SteamRecvBufferMessages.Value, 256, 4096);
+    public static int GetQueueLimit() => Mathf.Max(4096, VBNetTweaks.c_ZDOQueueLimit.Value);
     
     public static float GetSendInterval() => Mathf.Clamp(VBNetTweaks.c_SendInterval_S.Value, 0.01f, 0.2f);
     

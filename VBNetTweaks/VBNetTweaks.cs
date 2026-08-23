@@ -20,7 +20,7 @@ namespace VBNetTweaks
     public class VBNetTweaks : BaseUnityPlugin
     {
         private const string ModName = "VBNetTweaks";
-        private const string ModVersion = "0.4.1.10";
+        private const string ModVersion = "0.4.1.14";
         private const string ModGUID = "VitByr.VBNetTweaks";
         public static VBNetTweaks Instance { get; private set; }
         public CustomRPC _configSyncRPC;
@@ -39,11 +39,22 @@ namespace VBNetTweaks
         public static ConfigEntry<bool> c_ModuleShipSync;
         public static ConfigEntry<bool> c_ModuleMapPositionSync;
         public static ConfigEntry<bool> c_ModuleRevisionOptimization;
+        
+        
+   /*     public static ConfigEntry<float> c_EnterMaxDeltaTime;
+        public static ConfigEntry<float> c_EnterMinQuality;
+        public static ConfigEntry<float> c_ExitMaxDeltaTime;
+        public static ConfigEntry<float> c_ExitMinQuality;
+        public static ConfigEntry<float> c_ExitDuration;
+        public static ConfigEntry<int> c_EnterStaleSeconds;
+        public static ConfigEntry<int> c_EnterSamples;
+        public static ConfigEntry<float> c_UnhealthyDuration;*/
 
         public static ConfigEntry<int> c_SteamSendRateMaxKB;
         public static ConfigEntry<int> c_SteamSendBufferSizeKB;
         public static ConfigEntry<float> c_SteamTimeoutConnected;
         public static ConfigEntry<int> c_SteamRecvBufferMessages;
+        public static ConfigEntry<int> c_ZDOQueueLimit;
         
         public static ConfigEntry<float> c_MapPositionSendInterval;
         public static ConfigEntry<float> c_MapMaxPredictionSpeed;
@@ -79,14 +90,13 @@ namespace VBNetTweaks
             _harmony = new Harmony(ModGUID);
             
             _harmony.PatchAll(typeof(MiniMap_Patch));
-        //    _harmony.PatchAll(typeof(Ship_Patch));
+            _harmony.PatchAll(typeof(Ship_Patch));
             _harmony.PatchAll(typeof(ZDOMan_Patch));
             _harmony.PatchAll(typeof(ZDORevision_Patch));
             _harmony.PatchAll(typeof(ZNet_Patch));
             _harmony.PatchAll(typeof(ZNetScene_Patch));
             _harmony.PatchAll(typeof(ZSteamSocket_Patch));
-            _harmony.PatchAll(typeof(ZSyncTransform_Patch));
-        //    _harmony.PatchAll(typeof(PlayerCache));
+            _harmony.PatchAll(typeof(PlayerCache));
 
             Helper.LogDebug("Режим отладки включен");
         }
@@ -111,8 +121,20 @@ namespace VBNetTweaks
                 ? "Оптимизация частоты обновления ZDO (снижает трафик)" : "Optimize ZDO update frequency (reduces traffic)", synced: true);
 
 
+            // Пороги для карантина
+         /*   c_EnterMaxDeltaTime = _clientConfig.BindConfig("Health", "EnterMaxDeltaTime", 0.066f, "Максимальный deltaTime для входа в карантин (0.066 = 15 FPS)");
+            c_EnterMinQuality = _clientConfig.BindConfig("Health", "EnterMinQuality", 0.3f, "Минимальное качество соединения для входа (0-1)");
+            c_EnterStaleSeconds = _clientConfig.BindConfig("Health", "EnterStaleSeconds", 8, "Секунд без отчёта для входа в карантин");
+            c_EnterSamples = _clientConfig.BindConfig("Health", "EnterSamples", 3, "Количество плохих сэмплов для входа");
+
+            c_ExitMaxDeltaTime = _clientConfig.BindConfig("Health", "ExitMaxDeltaTime", 0.050f, "Максимальный deltaTime для выхода из карантина (0.05 = 20 FPS)");
+            c_ExitMinQuality = _clientConfig.BindConfig("Health", "ExitMinQuality", 0.5f, "Минимальное качество для выхода");
+            c_ExitDuration = _clientConfig.BindConfig("Health", "ExitDuration", 5f, "Секунд стабильности для выхода"); 
+            c_UnhealthyDuration = _clientConfig.BindConfig("Health", "UnhealthyDuration", 5f, "Секунд в нездоровом состоянии до переназначения", synced: true);*/
+            
+            
             var steamSection = "03 - Steam Settings";
-            c_SteamSendRateMaxKB = _clientConfig.BindConfig(steamSection, "MaxRateKB", 4096, c_ConfigLanguage.Value == Language.Russian 
+            c_SteamSendRateMaxKB = _clientConfig.BindConfig(steamSection, "MaxRateKB", 2048, c_ConfigLanguage.Value == Language.Russian 
                 ? "Максимальная скорость отправки Steam. Vanilla = ~150KB" : "Maximum Steam send rate. Vanilla = ~150KB", synced: true);
 
             c_SteamSendBufferSizeKB = _clientConfig.BindConfig(steamSection, "SendBufferSizeKB", 4096, c_ConfigLanguage.Value == Language.Russian
@@ -122,16 +144,19 @@ namespace VBNetTweaks
                 ? "Таймаут соединения Steam (миллисекунды)\n" + "Если соединение неактивно дольше этого времени — оно будет разорвано\n" + "Vanilla = 30000 (30 секунд), рекомендуется: 60000-180000"
                 : "Steam connection timeout (milliseconds)\n" + "If connection is idle longer than this — it will be closed\n" + "Vanilla = 30000 (30 sec), recommended: 60000-180000", synced: true);
 
-            c_SteamRecvBufferMessages = _clientConfig.BindConfig(steamSection, "RecvBufferMessages", 1024, c_ConfigLanguage.Value == Language.Russian
+            c_SteamRecvBufferMessages = _clientConfig.BindConfig(steamSection, "RecvBufferMessages", 2048, c_ConfigLanguage.Value == Language.Russian
                 ? "Количество пакетов в очереди приёма. Vanilla = 256. Рекомендуется 1024-4096" : "Number of packets in the receiving queue. Vanilla = 256. Recommended 1024-4096", synced: true);
             
             
             var serverSection = "04 - ZDO Settings";
-            c_SendInterval_S = _clientConfig.BindConfig(serverSection, "SendInterval", 0.03f, c_ConfigLanguage.Value == Language.Russian 
+            c_SendInterval_S = _clientConfig.BindConfig(serverSection, "SendInterval", 0.025f, c_ConfigLanguage.Value == Language.Russian 
                 ? "Интервал отправки данных. Vanilla = 0.05" : "Data send interval. Vanilla = 0.05", synced: true);
                 
             c_PeersPerUpdate_S = _clientConfig.BindConfig(serverSection, "PeersPerUpdate", 10, c_ConfigLanguage.Value == Language.Russian 
                 ? "Количество пиров за один цикл отправки. Vanilla = 1." : "Peers processed per send cycle. Vanilla = 1.", synced: true);
+            
+            c_ZDOQueueLimit = _clientConfig.BindConfig(serverSection, "ZDOQueueLimit", 30720, c_ConfigLanguage.Value == Language.Russian 
+                ? "Размер буфера отправки ZDO пакетов (vanilla = 10240 байт)" : "ZDO packet send buffer size (vanilla = 10240 bytes)", synced: true);
             
             c_NetRatePhysics = _clientConfig.BindConfig(serverSection, "NetRatePhysics", 10f, c_ConfigLanguage.Value == Language.Russian 
                 ? "Частота обновления физических объектов (предметы, снаряды). Vanilla = 20" : "Update rate for physics objects (items, projectiles). Vanilla = 20", synced: true);
@@ -163,6 +188,15 @@ namespace VBNetTweaks
                 pkg.Write(c_ModuleZDOOptimization.Value);
                 pkg.Write(c_ModuleShipSync.Value);
                 pkg.Write(c_ModuleMapPositionSync.Value);
+                
+      /*          pkg.Write(c_EnterMaxDeltaTime.Value);
+                pkg.Write(c_EnterMinQuality.Value);
+                pkg.Write(c_EnterStaleSeconds.Value);
+                pkg.Write(c_EnterSamples.Value);
+                pkg.Write(c_ExitMaxDeltaTime.Value);
+                pkg.Write(c_ExitMinQuality.Value);
+                pkg.Write(c_ExitDuration.Value);
+                pkg.Write(c_UnhealthyDuration.Value);*/
                 
                 pkg.Write(c_SteamSendRateMaxKB.Value);
                 pkg.Write(c_SteamSendBufferSizeKB.Value);
@@ -204,6 +238,15 @@ namespace VBNetTweaks
                 c_ModuleZDOOptimization.Value = pkg.ReadBool();
                 c_ModuleShipSync.Value = pkg.ReadBool();
                 c_ModuleMapPositionSync.Value = pkg.ReadBool();
+                
+         /*       c_EnterMaxDeltaTime.Value = pkg.ReadSingle();
+                c_EnterMinQuality.Value = pkg.ReadSingle();
+                c_EnterStaleSeconds.Value = pkg.ReadInt();
+                c_EnterSamples.Value = pkg.ReadInt();
+                c_ExitMaxDeltaTime.Value = pkg.ReadSingle();
+                c_ExitMinQuality.Value = pkg.ReadSingle();
+                c_ExitDuration.Value = pkg.ReadSingle();
+                c_UnhealthyDuration.Value = pkg.ReadSingle();*/
         
                 c_SteamSendRateMaxKB.Value = pkg.ReadInt();
                 c_SteamSendBufferSizeKB.Value = pkg.ReadInt();

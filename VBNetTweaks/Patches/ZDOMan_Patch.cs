@@ -53,5 +53,30 @@
             codeMatcher.SetOperandAndAdvance(AccessTools.Method(typeof(ZDOMan_Patch), nameof(ZDOMan_Patch.OptimizedSendZDOToPeers)));
             return codeMatcher.InstructionEnumeration();
         }
+        
+        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.SendZDOs))]
+        [HarmonyTranspiler]
+        public static IEnumerable<CodeInstruction> SendZDOs_QueueLimitFix(IEnumerable<CodeInstruction> instructions)
+        {
+            var codes = new List<CodeInstruction>(instructions);
+            int replacedCount = 0;
+
+            var getQueueLimitMethod = AccessTools.Method(typeof(Helper), nameof(Helper.GetQueueLimit));
+
+            for (int i = 0; i < codes.Count; i++)
+            {
+                if (codes[i].opcode == OpCodes.Ldc_I4 && (int)codes[i].operand == 10240)
+                {
+                    codes[i].opcode = OpCodes.Call;
+                    codes[i].operand = getQueueLimitMethod;
+                    replacedCount++;
+                }
+            }
+
+            if (replacedCount < 2) Helper.LogDebug("ZDOQueueLimit patch failed: found less than 2 instances of 10240!");
+            else if (replacedCount == 2) Helper.LogDebug($"ZDOQueueLimit patch to: {VBNetTweaks.c_ZDOQueueLimit.Value}");
+
+            return codes;
+        }
     }
 }
