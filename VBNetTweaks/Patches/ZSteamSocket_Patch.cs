@@ -80,7 +80,7 @@
 
         private static IEnumerable<CodeInstruction> ReplaceSendQueuedPackages(IEnumerable<CodeInstruction> instructions)
         {
-            MethodInfo operand = AccessTools.Method(typeof(ZSteamSocket_Patch), Helper.IsDedicated() ? nameof(ZSteamSocket_Patch.Replacement_Server) : nameof(ZSteamSocket_Patch.Replacement_Client));
+            MethodInfo operand = AccessTools.Method(typeof(ZSteamSocket_Patch), (Helper.IsDedicated() || Helper.IsServer()) ? nameof(ZSteamSocket_Patch.Replacement_Server) : nameof(ZSteamSocket_Patch.Replacement_Client));
             MethodInfo operand2 = AccessTools.Method(typeof(ZSteamSocket), nameof(ZSteamSocket.SendQueuedPackages));
             CodeMatcher codeMatcher = new CodeMatcher(instructions);
             codeMatcher.MatchForward(false, new CodeMatch(OpCodes.Call, operand2));

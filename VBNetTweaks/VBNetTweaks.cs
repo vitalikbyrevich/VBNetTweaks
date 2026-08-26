@@ -16,11 +16,12 @@ namespace VBNetTweaks
     [BepInIncompatibility("com.maxsch.valheim.TimeoutLimit")]
     [BepInIncompatibility("dzk.warheimnetwork")]
     [BepInIncompatibility("r4v9n1.terramizerserver")]
+    [BepInIncompatibility("com.bfv.CombatPrio")]
     
     public class VBNetTweaks : BaseUnityPlugin
     {
         private const string ModName = "VBNetTweaks";
-        private const string ModVersion = "0.4.1.14";
+        private const string ModVersion = "0.4.1.15";
         private const string ModGUID = "VitByr.VBNetTweaks";
         public static VBNetTweaks Instance { get; private set; }
         public CustomRPC _configSyncRPC;
@@ -40,16 +41,6 @@ namespace VBNetTweaks
         public static ConfigEntry<bool> c_ModuleMapPositionSync;
         public static ConfigEntry<bool> c_ModuleRevisionOptimization;
         
-        
-   /*     public static ConfigEntry<float> c_EnterMaxDeltaTime;
-        public static ConfigEntry<float> c_EnterMinQuality;
-        public static ConfigEntry<float> c_ExitMaxDeltaTime;
-        public static ConfigEntry<float> c_ExitMinQuality;
-        public static ConfigEntry<float> c_ExitDuration;
-        public static ConfigEntry<int> c_EnterStaleSeconds;
-        public static ConfigEntry<int> c_EnterSamples;
-        public static ConfigEntry<float> c_UnhealthyDuration;*/
-
         public static ConfigEntry<int> c_SteamSendRateMaxKB;
         public static ConfigEntry<int> c_SteamSendBufferSizeKB;
         public static ConfigEntry<float> c_SteamTimeoutConnected;
@@ -58,13 +49,9 @@ namespace VBNetTweaks
         
         public static ConfigEntry<float> c_MapPositionSendInterval;
         public static ConfigEntry<float> c_MapMaxPredictionSpeed;
-
-        public static ConfigEntry<float> c_NetRatePhysics;
-        public static ConfigEntry<float> c_NetRateNPC;
-        public static ConfigEntry<float> c_Vec3CullSize;
         
-        public static ConfigEntry<float> c_SendInterval_S;
-        public static ConfigEntry<int> c_PeersPerUpdate_S;
+        public static ConfigEntry<float> c_SendInterval;
+        public static ConfigEntry<int> c_PeerCycleDivisor;
         
         private Harmony _harmony;
 
@@ -91,12 +78,12 @@ namespace VBNetTweaks
             
             _harmony.PatchAll(typeof(MiniMap_Patch));
             _harmony.PatchAll(typeof(Ship_Patch));
+            _harmony.PatchAll(typeof(ZDO_Patch));
             _harmony.PatchAll(typeof(ZDOMan_Patch));
-            _harmony.PatchAll(typeof(ZDORevision_Patch));
+            _harmony.PatchAll(typeof(ZDOSortPriority));
             _harmony.PatchAll(typeof(ZNet_Patch));
             _harmony.PatchAll(typeof(ZNetScene_Patch));
             _harmony.PatchAll(typeof(ZSteamSocket_Patch));
-            _harmony.PatchAll(typeof(PlayerCache));
 
             Helper.LogDebug("Режим отладки включен");
         }
@@ -119,61 +106,41 @@ namespace VBNetTweaks
                 ? "Включить плавные маркеры игроков на карте\nУлучшает отображение позиций игроков" : "Enable smooth player markers on map\nImproves display of player positions", synced: true);
             c_ModuleRevisionOptimization = _clientConfig.BindConfig(modulesSection, "RevisionOptimization", true, c_ConfigLanguage.Value == Language.Russian 
                 ? "Оптимизация частоты обновления ZDO (снижает трафик)" : "Optimize ZDO update frequency (reduces traffic)", synced: true);
-
-
-            // Пороги для карантина
-         /*   c_EnterMaxDeltaTime = _clientConfig.BindConfig("Health", "EnterMaxDeltaTime", 0.066f, "Максимальный deltaTime для входа в карантин (0.066 = 15 FPS)");
-            c_EnterMinQuality = _clientConfig.BindConfig("Health", "EnterMinQuality", 0.3f, "Минимальное качество соединения для входа (0-1)");
-            c_EnterStaleSeconds = _clientConfig.BindConfig("Health", "EnterStaleSeconds", 8, "Секунд без отчёта для входа в карантин");
-            c_EnterSamples = _clientConfig.BindConfig("Health", "EnterSamples", 3, "Количество плохих сэмплов для входа");
-
-            c_ExitMaxDeltaTime = _clientConfig.BindConfig("Health", "ExitMaxDeltaTime", 0.050f, "Максимальный deltaTime для выхода из карантина (0.05 = 20 FPS)");
-            c_ExitMinQuality = _clientConfig.BindConfig("Health", "ExitMinQuality", 0.5f, "Минимальное качество для выхода");
-            c_ExitDuration = _clientConfig.BindConfig("Health", "ExitDuration", 5f, "Секунд стабильности для выхода"); 
-            c_UnhealthyDuration = _clientConfig.BindConfig("Health", "UnhealthyDuration", 5f, "Секунд в нездоровом состоянии до переназначения", synced: true);*/
-            
+        
             
             var steamSection = "03 - Steam Settings";
             c_SteamSendRateMaxKB = _clientConfig.BindConfig(steamSection, "MaxRateKB", 2048, c_ConfigLanguage.Value == Language.Russian 
                 ? "Максимальная скорость отправки Steam. Vanilla = ~150KB" : "Maximum Steam send rate. Vanilla = ~150KB", synced: true);
 
             c_SteamSendBufferSizeKB = _clientConfig.BindConfig(steamSection, "SendBufferSizeKB", 4096, c_ConfigLanguage.Value == Language.Russian
-                ? "Размер буфера отправки Steam в KB. Vanilla = ~260KB. Рекомендуется 1024-4096" : "Steam send buffer size in KB. Vanilla = ~260KB. Recommended 1024-4096", synced: true);
+                ? "Размер буфера отправки Steam в KB. Vanilla = ~260KB" : "Steam send buffer size in KB. Vanilla = ~260KB", synced: true);
 
-            c_SteamTimeoutConnected = _clientConfig.BindConfig(steamSection, "TimeoutConnected", 120000f, c_ConfigLanguage.Value == Language.Russian 
-                ? "Таймаут соединения Steam (миллисекунды)\n" + "Если соединение неактивно дольше этого времени — оно будет разорвано\n" + "Vanilla = 30000 (30 секунд), рекомендуется: 60000-180000"
-                : "Steam connection timeout (milliseconds)\n" + "If connection is idle longer than this — it will be closed\n" + "Vanilla = 30000 (30 sec), recommended: 60000-180000", synced: true);
+            c_SteamTimeoutConnected = _clientConfig.BindConfig(steamSection, "TimeoutConnected", 60000f, c_ConfigLanguage.Value == Language.Russian 
+                ? "Таймаут соединения Steam (миллисекунды)\n" + "Если соединение неактивно дольше этого времени — оно будет разорвано\n" + "Vanilla = 30000 (30 секунд)"
+                : "Steam connection timeout (milliseconds)\n" + "If connection is idle longer than this — it will be closed\n" + "Vanilla = 30000 (30 sec)", synced: true);
 
-            c_SteamRecvBufferMessages = _clientConfig.BindConfig(steamSection, "RecvBufferMessages", 2048, c_ConfigLanguage.Value == Language.Russian
-                ? "Количество пакетов в очереди приёма. Vanilla = 256. Рекомендуется 1024-4096" : "Number of packets in the receiving queue. Vanilla = 256. Recommended 1024-4096", synced: true);
+            c_SteamRecvBufferMessages = _clientConfig.BindConfig(steamSection, "RecvBufferMessages", 1024, c_ConfigLanguage.Value == Language.Russian
+                ? "Количество пакетов в очереди приёма. Vanilla = 256" : "Number of packets in the receiving queue. Vanilla = 256", synced: true);
             
             
             var serverSection = "04 - ZDO Settings";
-            c_SendInterval_S = _clientConfig.BindConfig(serverSection, "SendInterval", 0.025f, c_ConfigLanguage.Value == Language.Russian 
+            c_SendInterval = _clientConfig.BindConfig(serverSection, "SendInterval", 0.035f, c_ConfigLanguage.Value == Language.Russian 
                 ? "Интервал отправки данных. Vanilla = 0.05" : "Data send interval. Vanilla = 0.05", synced: true);
                 
-            c_PeersPerUpdate_S = _clientConfig.BindConfig(serverSection, "PeersPerUpdate", 10, c_ConfigLanguage.Value == Language.Russian 
-                ? "Количество пиров за один цикл отправки. Vanilla = 1." : "Peers processed per send cycle. Vanilla = 1.", synced: true);
+            c_PeerCycleDivisor = _clientConfig.BindConfig(serverSection, "PeerCycleDivisor", 3, c_ConfigLanguage.Value == Language.Russian 
+                    ? "Делитель для расчёта пиров за цикл. Формула: ceil(всего_пиров / делитель).\n" + "Больше значение → больше циклов на полный оборот → реже обновление каждого пира.\n" + "Примеры: 2 = оборот за 2 цикла, 3 = за 3 цикла, 5 = за 5 циклов." 
+                    : "Divisor for peers-per-cycle calculation. Formula: ceil(total_peers / divisor).\n" + "Higher value → more cycles per full rotation → less frequent updates per peer.\n" + "Examples: 2 = rotation in 2 cycles, 3 = in 3 cycles, 5 = in 5 cycles.", synced: true);
             
-            c_ZDOQueueLimit = _clientConfig.BindConfig(serverSection, "ZDOQueueLimit", 30720, c_ConfigLanguage.Value == Language.Russian 
+            c_ZDOQueueLimit = _clientConfig.BindConfig(serverSection, "ZDOQueueLimit", 20480, c_ConfigLanguage.Value == Language.Russian 
                 ? "Размер буфера отправки ZDO пакетов (vanilla = 10240 байт)" : "ZDO packet send buffer size (vanilla = 10240 bytes)", synced: true);
             
-            c_NetRatePhysics = _clientConfig.BindConfig(serverSection, "NetRatePhysics", 10f, c_ConfigLanguage.Value == Language.Russian 
-                ? "Частота обновления физических объектов (предметы, снаряды). Vanilla = 20" : "Update rate for physics objects (items, projectiles). Vanilla = 20", synced: true);
-
-            c_NetRateNPC = _clientConfig.BindConfig(serverSection, "NetRateNPC", 10f, c_ConfigLanguage.Value == Language.Russian 
-                ? "Частота обновления мобов. Vanilla = 20" : "Update rate for mobs. Vanilla = 20", synced: true);
-
-            c_Vec3CullSize = _clientConfig.BindConfig(serverSection, "Vec3CullSize", 0.05f, c_ConfigLanguage.Value == Language.Russian 
-                ? "Минимальное изменение позиции для отправки (чем меньше, тем точнее). Vanilla = 0" : "Minimum position change to send (smaller = more accurate). Vanilla = 0", synced: true);
-
             
             var mapSection = "05 - Map Positions";
             c_MapPositionSendInterval = _clientConfig.BindConfig(mapSection, "SendInterval", 0.5f, c_ConfigLanguage.Value == Language.Russian
-                ? "Интервал отправки позиций игроков (сек)\nМеньше = плавнее, но больше трафик. Vanilla: 2.0, рекомендуется: 0.2-0.5" 
-                : "Player position send interval (sec)\nLower = smoother, but more traffic. Vanilla: 2.0, recommended: 0.2-0.5", synced: true);
+                ? "Интервал отправки позиций игроков (сек)\nМеньше = плавнее, но больше трафик. Vanilla: 2.0" 
+                : "Player position send interval (sec)\nLower = smoother, but more traffic. Vanilla: 2.0", synced: true);
 
-            c_MapMaxPredictionSpeed = _clientConfig.BindConfig(mapSection, "MaxPredictionSpeed", 40f, c_ConfigLanguage.Value == Language.Russian
+            c_MapMaxPredictionSpeed = _clientConfig.BindConfig(mapSection, "MaxPredictionSpeed", 50f, c_ConfigLanguage.Value == Language.Russian
                 ? "Максимальная скорость движения маркера игрока на карте (м/с).\nТелепорты (порталы, спавн) обрабатываются отдельно – маркер перепрыгивает мгновенно." 
                 : "Maximum movement speed of player marker on map (m/s).\nTeleports (portals, spawn) are handled separately – the marker jumps instantly.", synced: true);
         }
@@ -189,15 +156,6 @@ namespace VBNetTweaks
                 pkg.Write(c_ModuleShipSync.Value);
                 pkg.Write(c_ModuleMapPositionSync.Value);
                 
-      /*          pkg.Write(c_EnterMaxDeltaTime.Value);
-                pkg.Write(c_EnterMinQuality.Value);
-                pkg.Write(c_EnterStaleSeconds.Value);
-                pkg.Write(c_EnterSamples.Value);
-                pkg.Write(c_ExitMaxDeltaTime.Value);
-                pkg.Write(c_ExitMinQuality.Value);
-                pkg.Write(c_ExitDuration.Value);
-                pkg.Write(c_UnhealthyDuration.Value);*/
-                
                 pkg.Write(c_SteamSendRateMaxKB.Value);
                 pkg.Write(c_SteamSendBufferSizeKB.Value);
                 pkg.Write(c_SteamTimeoutConnected.Value);
@@ -206,12 +164,8 @@ namespace VBNetTweaks
                 pkg.Write(c_MapPositionSendInterval.Value);
                 pkg.Write(c_MapMaxPredictionSpeed.Value);
                 
-                pkg.Write(c_NetRatePhysics.Value);
-                pkg.Write(c_NetRateNPC.Value);
-                pkg.Write(c_Vec3CullSize.Value);
-                
-                pkg.Write(c_SendInterval_S.Value);
-                pkg.Write(c_PeersPerUpdate_S.Value);
+                pkg.Write(c_SendInterval.Value);
+                pkg.Write(c_PeerCycleDivisor.Value);
             }
             catch (Exception e)
             {
@@ -239,15 +193,6 @@ namespace VBNetTweaks
                 c_ModuleShipSync.Value = pkg.ReadBool();
                 c_ModuleMapPositionSync.Value = pkg.ReadBool();
                 
-         /*       c_EnterMaxDeltaTime.Value = pkg.ReadSingle();
-                c_EnterMinQuality.Value = pkg.ReadSingle();
-                c_EnterStaleSeconds.Value = pkg.ReadInt();
-                c_EnterSamples.Value = pkg.ReadInt();
-                c_ExitMaxDeltaTime.Value = pkg.ReadSingle();
-                c_ExitMinQuality.Value = pkg.ReadSingle();
-                c_ExitDuration.Value = pkg.ReadSingle();
-                c_UnhealthyDuration.Value = pkg.ReadSingle();*/
-        
                 c_SteamSendRateMaxKB.Value = pkg.ReadInt();
                 c_SteamSendBufferSizeKB.Value = pkg.ReadInt();
                 c_SteamTimeoutConnected.Value = pkg.ReadSingle();
@@ -256,12 +201,8 @@ namespace VBNetTweaks
                 c_MapPositionSendInterval.Value = pkg.ReadSingle();
                 c_MapMaxPredictionSpeed.Value = pkg.ReadSingle();
                 
-                c_NetRatePhysics.Value = pkg.ReadSingle();
-                c_NetRateNPC.Value = pkg.ReadSingle();
-                c_Vec3CullSize.Value = pkg.ReadSingle();
-                
-                c_SendInterval_S.Value = pkg.ReadSingle();
-                c_PeersPerUpdate_S.Value = pkg.ReadInt();
+                c_SendInterval.Value = pkg.ReadSingle();
+                c_PeerCycleDivisor.Value = pkg.ReadInt();
             }
             catch (Exception e)
             {

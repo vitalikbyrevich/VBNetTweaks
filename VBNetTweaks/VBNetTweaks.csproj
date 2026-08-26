@@ -46,6 +46,8 @@
     <None Include="0\ObjectPool.cs" />
     <None Include="0\PacketLogger.cs" />
     <None Include="0\PerformanceMonitor.cs" />
+    <None Include="0\PlayerCache.cs" />
+    <None Include="0\PlayerOnShipSync.cs" />
     <None Include="0\PlayerSyncSystem.cs" />
     <None Include="0\RpcBatcher.cs" />
     <None Include="0\RpcFilter.cs" />
@@ -58,9 +60,9 @@
     <None Include="0\VFXCleanupPatch.cs" />
     <Compile Include="GlobalUsings.cs" />
     <Compile Include="Patches\MiniMap_Patch.cs" />
-    <None Include="Patches\Owner_Patch.cs" />
     <Compile Include="Patches\ZDOMan_Patch.cs" />
-    <Compile Include="Patches\ZDORevision_Patch.cs" />
+    <Compile Include="Patches\ZDO_Patch.cs" />
+    <Compile Include="Patches\ZDOSortPriority.cs" />
     <Compile Include="Patches\ZNetScene_Patch.cs" />
     <None Include="0\VFXOrphanCleanup.cs" />
     <Compile Include="Patches\Ship_Patch.cs" />
@@ -81,7 +83,6 @@
     <None Include="0\DynamicZDOThrottler.cs" />
     <None Include="0\OptimizedNetSync.cs" />
     <None Include="0\PerfomanceMonitor.cs" />
-    <None Include="0\PlayerOnShipSync.cs" />
     <None Include="0\PlayerPositionSyncPatches.cs" />
     <None Include="0\ShipNetSyncLite.cs" />
     <None Include="0\ShipSyncPatches.cs" />
@@ -100,7 +101,6 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <None Include="App.config" />
     <None Include="packages.config" />
-    <Compile Include="Patches\PlayerCache.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="0Harmony">

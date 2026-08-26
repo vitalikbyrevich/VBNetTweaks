@@ -9,28 +9,27 @@
             {
                 int count = man.m_peers.Count;
                 if (count == 0) return;
-        
+
                 man.m_sendTimer += dt;
-                float interval = Helper.GetSendInterval();
+
+                GetAdaptiveParams(count, out float interval, out int maxPeers);
+
                 if (man.m_sendTimer < interval) return;
-        
                 man.m_sendTimer -= interval;
-        
-                int maxPeers = Mathf.Clamp(VBNetTweaks.c_PeersPerUpdate_S.Value, 1, count);
+
                 int start = (man.m_nextSendPeer >= 0) ? man.m_nextSendPeer : 0;
-        
                 int processed = 0;
+
                 for (int i = 0; i < maxPeers; i++)
                 {
                     int idx = (start + i) % count;
                     processed++;
-            
                     ZDOMan.ZDOPeer peer = man.m_peers[idx];
                     if (peer?.m_peer?.m_socket?.IsConnected() != true) continue;
-            
-                    man.SendZDOs(peer, false);
+                    man.SendZDOs(peer, flush: false);
                 }
-                man.m_nextSendPeer = (start + processed) % count; 
+
+                man.m_nextSendPeer = (start + processed) % count;
             }
             catch (Exception ex)
             {
@@ -38,7 +37,17 @@
                 man.SendZDOToPeers2(dt);
             }
         }
-        
+
+        private static void GetAdaptiveParams(int peerCount, out float interval, out int maxPeers)
+        {
+            interval = Helper.GetSendInterval();
+
+            int divisor = VBNetTweaks.c_PeerCycleDivisor.Value;
+            maxPeers = Mathf.CeilToInt((float)peerCount / divisor);
+
+            maxPeers = Mathf.Clamp(maxPeers, 1, peerCount);
+        }
+
         [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.Update)), HarmonyTranspiler]
         private static IEnumerable<CodeInstruction> ZDOManUpdateTranspiler(IEnumerable<CodeInstruction> instructions)
         {
@@ -50,12 +59,12 @@
                 return instructions;
             }
             else Helper.LogDebug("SendZDOToPeers2 success replace to OptimizedSendZDOToPeers");
+
             codeMatcher.SetOperandAndAdvance(AccessTools.Method(typeof(ZDOMan_Patch), nameof(ZDOMan_Patch.OptimizedSendZDOToPeers)));
             return codeMatcher.InstructionEnumeration();
         }
-        
-        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.SendZDOs))]
-        [HarmonyTranspiler]
+
+        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.SendZDOs)), HarmonyTranspiler]
         public static IEnumerable<CodeInstruction> SendZDOs_QueueLimitFix(IEnumerable<CodeInstruction> instructions)
         {
             var codes = new List<CodeInstruction>(instructions);

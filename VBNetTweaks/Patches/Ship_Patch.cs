@@ -19,10 +19,16 @@ public static class Ship_Patch
     private const float SMOOTH_ROT_ON_SHIP = 0.3f;
     private const float SMOOTH_POS_OFF_SHIP = 0.25f;
     private const float SMOOTH_ROT_OFF_SHIP = 0.15f;
-    private const float CORRECTION_THRESHOLD = 0.5f;
+    private const float CORRECTION_THRESHOLD = 2.5f;
     private const float ROT_CORRECTION_THRESHOLD = 10f;
     private const float INTERP_DELAY = 0.1f; // 100мс буфер для плавности
 
+    private static readonly Dictionary<long, ZDOID> _playerShipMap = new();
+    public static bool IsPlayerOnShip(long playerId)
+    {
+        return _playerShipMap.TryGetValue(playerId, out var shipId) && !shipId.IsNone();
+    }
+    
     [HarmonyPatch(typeof(Ship), nameof(Ship.CustomFixedUpdate))]
     [HarmonyPostfix]
     public static void SmoothShip(Ship __instance, float fixedDeltaTime)
@@ -84,7 +90,7 @@ public static class Ship_Patch
 
         // Интерполяция с буфером
         var t = __instance.transform;
-        float interpWindow = Mathf.Max(0.05f, d.targetTime - d.prevTime) + INTERP_DELAY;
+        float interpWindow = 0.15f; // фиксированные 150мс
         float interpElapsed = now - d.targetTime + INTERP_DELAY;
         float lerpT = Mathf.Clamp01(interpElapsed / interpWindow);
 
@@ -95,12 +101,12 @@ public static class Ship_Patch
         if (lerpT >= 1.0f && d.vel.sqrMagnitude > 0.01f)
         {
             float extraTime = interpElapsed - interpWindow;
-            predicted = d.targetPos + d.vel * Mathf.Min(extraTime, 0.5f); // не больше 0.5с экстраполяции
+            predicted = d.targetPos + d.vel * Mathf.Min(extraTime, 0.25f); // не больше 0.5с экстраполяции
         }
         else predicted = interpolated;
 
         // Выбор скорости сглаживания
-        bool localPlayerOnShip = PlayerCache.IsPlayerOnShip(Player.m_localPlayer?.GetPlayerID() ?? 0);
+        bool localPlayerOnShip = IsPlayerOnShip(Player.m_localPlayer?.GetPlayerID() ?? 0);
         float lerpPos = localPlayerOnShip ? SMOOTH_POS_ON_SHIP : SMOOTH_POS_OFF_SHIP;
         float lerpRot = localPlayerOnShip ? SMOOTH_ROT_ON_SHIP : SMOOTH_ROT_OFF_SHIP;
 

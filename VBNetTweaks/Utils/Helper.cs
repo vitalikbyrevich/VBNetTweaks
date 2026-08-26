@@ -10,7 +10,7 @@ public static class Helper
     public static int GetSteamRecvBufferMessages() => Mathf.Clamp(VBNetTweaks.c_SteamRecvBufferMessages.Value, 256, 4096);
     public static int GetQueueLimit() => Mathf.Max(4096, VBNetTweaks.c_ZDOQueueLimit.Value);
     
-    public static float GetSendInterval() => Mathf.Clamp(VBNetTweaks.c_SendInterval_S.Value, 0.01f, 0.2f);
+    public static float GetSendInterval() => Mathf.Clamp(VBNetTweaks.c_SendInterval.Value, 0.01f, 0.2f);
     
     public static float GetMapPositionSendInterval() => Mathf.Clamp(VBNetTweaks.c_MapPositionSendInterval.Value, 0.1f, 2f);
     

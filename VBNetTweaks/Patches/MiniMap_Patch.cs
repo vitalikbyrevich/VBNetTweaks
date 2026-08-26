@@ -59,20 +59,31 @@
                 }
 
                 float deltaTime = now - track.lastUpdateTime;
-                if (deltaTime > 0.001f && deltaTime < 2f)
+
+                if (deltaTime > 0.001f)
                 {
                     Vector3 deltaPos = realPosition - track.lastRealPosition;
                     float distance = deltaPos.magnitude;
 
                     if (distance > 50f)
                     {
-                        track.teleportEndTime = now + 0.2f;
+                        track.teleportEndTime = now + 0.3f;
                         track.lastRealVelocity = Vector3.zero;
                     }
-                    else if (distance > 0.01f)
+                    else if (deltaTime < 2f && distance > 0.01f)
                     {
                         track.lastRealVelocity = deltaPos / deltaTime;
                         if (track.lastRealVelocity.magnitude > 100f) track.lastRealVelocity = track.lastRealVelocity.normalized * 100f;
+                    }
+                }
+
+                if (deltaTime >= 2f)
+                {
+                    float distFromSmooth = Vector3.Distance(track.smoothPosition, realPosition);
+                    if (distFromSmooth > 50f)
+                    {
+                        track.teleportEndTime = now + 0.3f;
+                        track.lastRealVelocity = Vector3.zero;
                     }
                 }
 
