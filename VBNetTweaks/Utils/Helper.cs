@@ -17,6 +17,8 @@ public static class Helper
     public static bool IsDedicated() => SystemInfo.graphicsDeviceType == GraphicsDeviceType.Null;
     public static bool IsServer() => ZNet.instance && ZNet.instance.IsServer();
     
+    public static readonly Dictionary<ZRpc, List<ZPackage>> _buffers = new();
+    
     public static void LogDebug(string message)
     {
         if (VBNetTweaks.c_DebugEnabled.Value) VBNetTweaks.Logger.LogWarning(message);

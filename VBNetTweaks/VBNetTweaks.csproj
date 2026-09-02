@@ -62,7 +62,6 @@
     <Compile Include="Patches\MiniMap_Patch.cs" />
     <Compile Include="Patches\ZDOMan_Patch.cs" />
     <Compile Include="Patches\ZDO_Patch.cs" />
-    <Compile Include="Patches\ZDOSortPriority.cs" />
     <Compile Include="Patches\ZNetScene_Patch.cs" />
     <None Include="0\VFXOrphanCleanup.cs" />
     <Compile Include="Patches\Ship_Patch.cs" />

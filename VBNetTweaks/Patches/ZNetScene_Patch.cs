@@ -6,7 +6,7 @@
         private static float _teleportBoostEnd = 0f;
         public static void TriggerTeleportWindow() => _teleportBoostEnd = Time.time + 5f;
         
-        private static readonly List<ZDO> _zdosToRemove = new List<ZDO>();
+     /*   private static readonly List<ZDO> _zdosToRemove = new List<ZDO>();
         private static byte _currentMark = 0;
 
         [HarmonyPrefix]
@@ -80,7 +80,7 @@
             _zdosToRemove.Clear();
 
             return false;
-        }
+        }*/
         
         [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.InLoadingScreen))]
         [HarmonyPrefix]

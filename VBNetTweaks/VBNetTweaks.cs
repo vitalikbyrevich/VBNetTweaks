@@ -21,7 +21,7 @@ namespace VBNetTweaks
     public class VBNetTweaks : BaseUnityPlugin
     {
         private const string ModName = "VBNetTweaks";
-        private const string ModVersion = "0.4.1.15";
+        private const string ModVersion = "0.4.1.16";
         private const string ModGUID = "VitByr.VBNetTweaks";
         public static VBNetTweaks Instance { get; private set; }
         public CustomRPC _configSyncRPC;
@@ -80,7 +80,6 @@ namespace VBNetTweaks
             _harmony.PatchAll(typeof(Ship_Patch));
             _harmony.PatchAll(typeof(ZDO_Patch));
             _harmony.PatchAll(typeof(ZDOMan_Patch));
-            _harmony.PatchAll(typeof(ZDOSortPriority));
             _harmony.PatchAll(typeof(ZNet_Patch));
             _harmony.PatchAll(typeof(ZNetScene_Patch));
             _harmony.PatchAll(typeof(ZSteamSocket_Patch));
@@ -131,7 +130,7 @@ namespace VBNetTweaks
                     ? "Делитель для расчёта пиров за цикл. Формула: ceil(всего_пиров / делитель).\n" + "Больше значение → больше циклов на полный оборот → реже обновление каждого пира.\n" + "Примеры: 2 = оборот за 2 цикла, 3 = за 3 цикла, 5 = за 5 циклов." 
                     : "Divisor for peers-per-cycle calculation. Formula: ceil(total_peers / divisor).\n" + "Higher value → more cycles per full rotation → less frequent updates per peer.\n" + "Examples: 2 = rotation in 2 cycles, 3 = in 3 cycles, 5 = in 5 cycles.", synced: true);
             
-            c_ZDOQueueLimit = _clientConfig.BindConfig(serverSection, "ZDOQueueLimit", 20480, c_ConfigLanguage.Value == Language.Russian 
+            c_ZDOQueueLimit = _clientConfig.BindConfig(serverSection, "ZDOQueueLimit", 30720, c_ConfigLanguage.Value == Language.Russian 
                 ? "Размер буфера отправки ZDO пакетов (vanilla = 10240 байт)" : "ZDO packet send buffer size (vanilla = 10240 bytes)", synced: true);
             
             
