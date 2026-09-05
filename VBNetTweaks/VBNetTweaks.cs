@@ -21,7 +21,7 @@ namespace VBNetTweaks
     public class VBNetTweaks : BaseUnityPlugin
     {
         private const string ModName = "VBNetTweaks";
-        private const string ModVersion = "0.4.1.16";
+        private const string ModVersion = "0.4.1.19";
         private const string ModGUID = "VitByr.VBNetTweaks";
         public static VBNetTweaks Instance { get; private set; }
         public CustomRPC _configSyncRPC;
@@ -33,6 +33,8 @@ namespace VBNetTweaks
 
         public static ConfigEntry<bool> c_DebugEnabled;
         public static ConfigEntry<bool> c_VerboseLogging;
+        public static ConfigEntry<bool> c_NetStatsLogging;
+        public static ConfigEntry<int> c_NetStatsInterval;
         public static ConfigEntry<int> c_TargetFPS;
 
         public static ConfigEntry<bool> c_ModuleSteamOptimizations;
@@ -41,10 +43,10 @@ namespace VBNetTweaks
         public static ConfigEntry<bool> c_ModuleMapPositionSync;
         public static ConfigEntry<bool> c_ModuleRevisionOptimization;
         
+        
         public static ConfigEntry<int> c_SteamSendRateMaxKB;
         public static ConfigEntry<int> c_SteamSendBufferSizeKB;
         public static ConfigEntry<float> c_SteamTimeoutConnected;
-        public static ConfigEntry<int> c_SteamRecvBufferMessages;
         public static ConfigEntry<int> c_ZDOQueueLimit;
         
         public static ConfigEntry<float> c_MapPositionSendInterval;
@@ -81,8 +83,8 @@ namespace VBNetTweaks
             _harmony.PatchAll(typeof(ZDO_Patch));
             _harmony.PatchAll(typeof(ZDOMan_Patch));
             _harmony.PatchAll(typeof(ZNet_Patch));
-            _harmony.PatchAll(typeof(ZNetScene_Patch));
             _harmony.PatchAll(typeof(ZSteamSocket_Patch));
+            _harmony.PatchAll(typeof(NetStats_Patch));
 
             Helper.LogDebug("Режим отладки включен");
         }
@@ -95,6 +97,9 @@ namespace VBNetTweaks
             var debugSection = "01 - Debug";
             c_DebugEnabled = Config.Bind(debugSection, "DebugEnabled", false, c_ConfigLanguage.Value == Language.Russian ? "Включить отладочный вывод" : "Enable debug output");
             c_VerboseLogging = Config.Bind(debugSection, "VerboseLogging", false, c_ConfigLanguage.Value == Language.Russian ? "Включить подробное логирование" : "Enable verbose logging");
+            c_NetStatsLogging = Config.Bind(debugSection, "NetStatsLogging", true, c_ConfigLanguage.Value == Language.Russian
+                ? "Логирование статистики отправки/приёма пакетов (раз в интервал)." : "Log send/receive packet statistics (once per interval).");
+            c_NetStatsInterval = Config.Bind(debugSection, "NetStatsIntervalSec", 10, c_ConfigLanguage.Value == Language.Russian ? "Интервал дампа статистики, сек." : "Statistics dump interval, sec.");
 
 
             var modulesSection = "02 - Modules";
@@ -105,25 +110,21 @@ namespace VBNetTweaks
                 ? "Включить плавные маркеры игроков на карте\nУлучшает отображение позиций игроков" : "Enable smooth player markers on map\nImproves display of player positions", synced: true);
             c_ModuleRevisionOptimization = _clientConfig.BindConfig(modulesSection, "RevisionOptimization", true, c_ConfigLanguage.Value == Language.Russian 
                 ? "Оптимизация частоты обновления ZDO (снижает трафик)" : "Optimize ZDO update frequency (reduces traffic)", synced: true);
-        
             
             var steamSection = "03 - Steam Settings";
             c_SteamSendRateMaxKB = _clientConfig.BindConfig(steamSection, "MaxRateKB", 2048, c_ConfigLanguage.Value == Language.Russian 
                 ? "Максимальная скорость отправки Steam. Vanilla = ~150KB" : "Maximum Steam send rate. Vanilla = ~150KB", synced: true);
 
-            c_SteamSendBufferSizeKB = _clientConfig.BindConfig(steamSection, "SendBufferSizeKB", 4096, c_ConfigLanguage.Value == Language.Russian
-                ? "Размер буфера отправки Steam в KB. Vanilla = ~260KB" : "Steam send buffer size in KB. Vanilla = ~260KB", synced: true);
+            c_SteamSendBufferSizeKB = _clientConfig.BindConfig(steamSection, "SendBufferSizeKB", 1024, c_ConfigLanguage.Value == Language.Russian
+                ? "Размер буфера отправки Steam в KB. Vanilla = ~512KB" : "Steam send buffer size in KB. Vanilla = ~512KB", synced: true);
 
             c_SteamTimeoutConnected = _clientConfig.BindConfig(steamSection, "TimeoutConnected", 60000f, c_ConfigLanguage.Value == Language.Russian 
                 ? "Таймаут соединения Steam (миллисекунды)\n" + "Если соединение неактивно дольше этого времени — оно будет разорвано\n" + "Vanilla = 30000 (30 секунд)"
                 : "Steam connection timeout (milliseconds)\n" + "If connection is idle longer than this — it will be closed\n" + "Vanilla = 30000 (30 sec)", synced: true);
-
-            c_SteamRecvBufferMessages = _clientConfig.BindConfig(steamSection, "RecvBufferMessages", 1024, c_ConfigLanguage.Value == Language.Russian
-                ? "Количество пакетов в очереди приёма. Vanilla = 256" : "Number of packets in the receiving queue. Vanilla = 256", synced: true);
             
             
             var serverSection = "04 - ZDO Settings";
-            c_SendInterval = _clientConfig.BindConfig(serverSection, "SendInterval", 0.035f, c_ConfigLanguage.Value == Language.Russian 
+            c_SendInterval = _clientConfig.BindConfig(serverSection, "SendInterval", 0.04f, c_ConfigLanguage.Value == Language.Russian 
                 ? "Интервал отправки данных. Vanilla = 0.05" : "Data send interval. Vanilla = 0.05", synced: true);
                 
             c_PeerCycleDivisor = _clientConfig.BindConfig(serverSection, "PeerCycleDivisor", 3, c_ConfigLanguage.Value == Language.Russian 
@@ -131,7 +132,7 @@ namespace VBNetTweaks
                     : "Divisor for peers-per-cycle calculation. Formula: ceil(total_peers / divisor).\n" + "Higher value → more cycles per full rotation → less frequent updates per peer.\n" + "Examples: 2 = rotation in 2 cycles, 3 = in 3 cycles, 5 = in 5 cycles.", synced: true);
             
             c_ZDOQueueLimit = _clientConfig.BindConfig(serverSection, "ZDOQueueLimit", 30720, c_ConfigLanguage.Value == Language.Russian 
-                ? "Размер буфера отправки ZDO пакетов (vanilla = 10240 байт)" : "ZDO packet send buffer size (vanilla = 10240 bytes)", synced: true);
+                ? "Размер буфера отправки ZDO пакетов (vanilla = 10240 байт). Требуется рестарт" : "ZDO packet send buffer size (vanilla = 10240 bytes). Required Restart", synced: true);
             
             
             var mapSection = "05 - Map Positions";
@@ -142,6 +143,8 @@ namespace VBNetTweaks
             c_MapMaxPredictionSpeed = _clientConfig.BindConfig(mapSection, "MaxPredictionSpeed", 50f, c_ConfigLanguage.Value == Language.Russian
                 ? "Максимальная скорость движения маркера игрока на карте (м/с).\nТелепорты (порталы, спавн) обрабатываются отдельно – маркер перепрыгивает мгновенно." 
                 : "Maximum movement speed of player marker on map (m/s).\nTeleports (portals, spawn) are handled separately – the marker jumps instantly.", synced: true);
+            
+            
         }
         
         public ZPackage BuildConfigPackage()
@@ -158,7 +161,6 @@ namespace VBNetTweaks
                 pkg.Write(c_SteamSendRateMaxKB.Value);
                 pkg.Write(c_SteamSendBufferSizeKB.Value);
                 pkg.Write(c_SteamTimeoutConnected.Value);
-                pkg.Write(c_SteamRecvBufferMessages.Value);
                 
                 pkg.Write(c_MapPositionSendInterval.Value);
                 pkg.Write(c_MapMaxPredictionSpeed.Value);
@@ -195,7 +197,6 @@ namespace VBNetTweaks
                 c_SteamSendRateMaxKB.Value = pkg.ReadInt();
                 c_SteamSendBufferSizeKB.Value = pkg.ReadInt();
                 c_SteamTimeoutConnected.Value = pkg.ReadSingle();
-                c_SteamRecvBufferMessages.Value = pkg.ReadInt();
                 
                 c_MapPositionSendInterval.Value = pkg.ReadSingle();
                 c_MapMaxPredictionSpeed.Value = pkg.ReadSingle();

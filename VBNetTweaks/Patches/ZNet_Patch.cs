@@ -31,8 +31,7 @@ public class ZNet_Patch
     }
 
     // Клиент: начинаем буферизовать входящие ZDOData сразу при подключении
-    [HarmonyPatch(typeof(ZNet), nameof(ZNet.OnNewConnection))]
-    [HarmonyPostfix]
+    [HarmonyPatch(typeof(ZNet), nameof(ZNet.OnNewConnection)),HarmonyPostfix]
     private static void OnNewConnection_Postfix(ZNet __instance, ZNetPeer peer)
     {
         if (!VBNetTweaks.c_ModEnabled.Value) return;
@@ -47,12 +46,10 @@ public class ZNet_Patch
         });
     }
 
-    [HarmonyPatch(typeof(ZNet), nameof(ZNet.Shutdown))]
-    [HarmonyPostfix]
+    [HarmonyPatch(typeof(ZNet), nameof(ZNet.Shutdown)),HarmonyPostfix]
     private static void Shutdown_Postfix() => Helper._buffers.Clear();
 
-    [HarmonyPatch(typeof(ZNet), nameof(ZNet.Disconnect), new Type[] { typeof(ZNetPeer) })]
-    [HarmonyPostfix]
+    [HarmonyPatch(typeof(ZNet), nameof(ZNet.Disconnect), new Type[] { typeof(ZNetPeer) }),HarmonyPostfix]
     private static void Disconnect_Postfix(ZNetPeer peer) => Helper._buffers.Remove(peer.m_rpc);
     
     [HarmonyPatch(typeof(ZNet), nameof(ZNet.OnDestroy)), HarmonyPostfix]

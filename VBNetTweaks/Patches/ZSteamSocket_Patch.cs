@@ -3,7 +3,7 @@
     [HarmonyPatch]
     public static class ZSteamSocket_Patch
     {
-        [HarmonyPatch(typeof(ZSteamSocket), nameof(ZSteamSocket.RegisterGlobalCallbacks)), HarmonyTranspiler]
+       /* [HarmonyPatch(typeof(ZSteamSocket), nameof(ZSteamSocket.RegisterGlobalCallbacks)), HarmonyTranspiler]
         private static IEnumerable<CodeInstruction> RegisterGlobalCallbacks_Transpiler(IEnumerable<CodeInstruction> instructions)
         {
             if (!VBNetTweaks.c_ModuleSteamOptimizations.Value) return instructions;
@@ -34,40 +34,22 @@
             if (!rateReplaced) Helper.LogDebug("SendRate constant 153600 not found!");
 
             return codes;
-        }
+        }*/
         
-        [HarmonyPatch(typeof(ZSteamSocket), nameof(ZSteamSocket.RegisterGlobalCallbacks)), HarmonyPostfix]
-        private static void ApplySteamBuffers()
-        {
-            if (!VBNetTweaks.c_ModuleSteamOptimizations.Value) return;
-            try
-            {
-                int sendBuffer = Helper.GetSteamSendBufferSizeKB();
-                int recvBuffer = Helper.GetSteamRecvBufferMessages();
+       [HarmonyPatch(typeof(ZSteamSocket), nameof(ZSteamSocket.RegisterGlobalCallbacks)), HarmonyPostfix]
+       private static void ApplySteamSettings()
+       {
+           if (!VBNetTweaks.c_ModuleSteamOptimizations.Value) return;
 
-                // === ПРИЁМНЫЕ БУФЕРЫ (Защита от дропов при лагах CPU) ===
-                SetConfigInt((ESteamNetworkingConfigValue)47, sendBuffer);
-                Helper.LogDebug($"RecvBufferSize: {sendBuffer / 1024}KB");
-
-                // 48 = RecvBufferMessages (количество пакетов в очереди)
-                SetConfigInt((ESteamNetworkingConfigValue)48, recvBuffer);
-                Helper.LogDebug($"RecvBufferMessages: {recvBuffer}");
-
-                // === ОПТИМИЗАЦИЯ ОТЗЫВЧИВОСТИ (Nagle) ===
-                // 12 = NagleTime (микросекунды). 0 = отключить задержку склеивания пакетов.
-                SetConfigInt((ESteamNetworkingConfigValue)12, 2500);
-                Helper.LogDebug("NagleTime: 2500 (disabled for instant send)");
-
-                // === ЗАЩИТА ОТ ТАЙМАУТОВ ПРИ КОННЕКТЕ ===
-                // 24 = TimeoutInitial (миллисекунды). Время на первоначальный handshake.
-                SetConfigFloat((ESteamNetworkingConfigValue)24, 30000f);
-                Helper.LogDebug("TimeoutInitial: 30000ms");
-            }
-            catch (Exception e)
-            {
-                Helper.LogDebug($"Failed to apply Steam buffers: {e.Message}");
-            }
-        }
+           SetConfigFloat(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_TimeoutConnected, Helper.GetTimeoutConnected());
+           SetConfigFloat(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_TimeoutInitial, 30000f);
+           SetConfigInt(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendRateMin, Helper.GetSteamSendRateMaxKB() / 4);
+           SetConfigInt(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendRateMax, Helper.GetSteamSendRateMaxKB());
+           SetConfigInt(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendBufferSize, Helper.GetSteamSendBufferSizeKB());
+           SetConfigInt((ESteamNetworkingConfigValue)47, 2048 * 1024); // RecvBufferSize
+           SetConfigInt((ESteamNetworkingConfigValue)48, 1024); // RecvBufferMessages
+           SetConfigInt(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_NagleTime, 2500);
+       }
         
         [HarmonyPatch(typeof(ZSteamSocket), nameof(ZSteamSocket.Send)),HarmonyTranspiler]
         private static IEnumerable<CodeInstruction> Send_Transpiler(IEnumerable<CodeInstruction> instructions) => ReplaceSendQueuedPackages(instructions);
@@ -118,6 +100,7 @@
                 }
                 if (eResult != EResult.k_EResultOK)
                 {
+                    NetStats.SteamSendFail++; 
                     ZLog.Log("Failed to send data " + eResult);
                     break;
                 }
@@ -144,6 +127,7 @@
                 }
                 if (eResult != EResult.k_EResultOK)
                 {
+                    NetStats.SteamSendFail++; 
                     ZLog.Log("Failed to send data " + eResult);
                     break;
                 }
@@ -156,19 +140,25 @@
         {
             try
             {
-                GCHandle handle = GCHandle.Alloc(value, GCHandleType.Pinned);
+                IntPtr p = Marshal.AllocHGlobal(sizeof(float));
                 try
                 {
-                    SteamNetworkingUtils.SetConfigValue(config, ESteamNetworkingConfigScope.k_ESteamNetworkingConfig_Global, IntPtr.Zero, ESteamNetworkingConfigDataType.k_ESteamNetworkingConfig_Float, handle.AddrOfPinnedObject());
+                    Marshal.StructureToPtr(value, p, false);
+                    bool ok = (Helper.IsDedicated() || Helper.IsServer())
+                        ? SteamGameServerNetworkingUtils.SetConfigValue(config, ESteamNetworkingConfigScope.k_ESteamNetworkingConfig_Global, IntPtr.Zero, ESteamNetworkingConfigDataType.k_ESteamNetworkingConfig_Float, p)
+                        : SteamNetworkingUtils.SetConfigValue(config, ESteamNetworkingConfigScope.k_ESteamNetworkingConfig_Global, IntPtr.Zero, ESteamNetworkingConfigDataType.k_ESteamNetworkingConfig_Float, p);
+            
+                    if (ok) Helper.LogDebug($"Steam cfg {(int)config} = {value:F2} — OK");
+                    else Helper.LogDebug($"Steam cfg {(int)config} = {value:F2} — ОТКЛОНЕНО (нативный SDK не знает этот параметр)");
                 }
                 finally
                 {
-                    handle.Free();
+                    Marshal.FreeHGlobal(p);
                 }
             }
             catch (Exception ex)
             {
-                Helper.LogDebug($"Failed to set float {config}: {ex.Message}");
+                Helper.LogDebug($"Steam cfg {(int)config} — исключение: {ex.Message}");
             }
         }
 
@@ -180,8 +170,10 @@
                 try
                 {
                     Marshal.WriteInt32(p, value);
-                    bool ok = SteamNetworkingUtils.SetConfigValue(config, ESteamNetworkingConfigScope.k_ESteamNetworkingConfig_Global, IntPtr.Zero, ESteamNetworkingConfigDataType.k_ESteamNetworkingConfig_Int32, p);
-
+                    bool ok = (Helper.IsDedicated() || Helper.IsServer())
+                        ? SteamGameServerNetworkingUtils.SetConfigValue(config, ESteamNetworkingConfigScope.k_ESteamNetworkingConfig_Global, IntPtr.Zero, ESteamNetworkingConfigDataType.k_ESteamNetworkingConfig_Int32, p)
+                        : SteamNetworkingUtils.SetConfigValue(config, ESteamNetworkingConfigScope.k_ESteamNetworkingConfig_Global, IntPtr.Zero, ESteamNetworkingConfigDataType.k_ESteamNetworkingConfig_Int32, p);
+                    
                     if (ok) Helper.LogDebug($"Steam cfg {(int)config} = {value} — OK");
                     else Helper.LogDebug($"Steam cfg {(int)config} = {value} — ОТКЛОНЕНО (нативный SDK не знает этот параметр)");
                 }

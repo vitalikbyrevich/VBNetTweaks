@@ -29,8 +29,7 @@ public static class Ship_Patch
         return _playerShipMap.TryGetValue(playerId, out var shipId) && !shipId.IsNone();
     }
     
-    [HarmonyPatch(typeof(Ship), nameof(Ship.CustomFixedUpdate))]
-    [HarmonyPostfix]
+    [HarmonyPatch(typeof(Ship), nameof(Ship.CustomFixedUpdate)),HarmonyPostfix]
     public static void SmoothShip(Ship __instance, float fixedDeltaTime)
     {
         if (!VBNetTweaks.c_ModuleShipSync.Value) return;

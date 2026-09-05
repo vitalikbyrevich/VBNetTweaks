@@ -34,7 +34,7 @@
             catch (Exception ex)
             {
                 Helper.LogDebug($"Error in OptimizedSendZDOToPeers: {ex.Message}");
-                man.SendZDOToPeers2(dt);
+              //  man.SendZDOToPeers2(dt);
             }
         }
 
@@ -107,11 +107,9 @@
             int prefab = zdo.GetPrefab();
 
             if (prefab == PlayerHash) return PLAYER;
-
             if (_cache.TryGetValue(prefab, out byte cached)) return cached;
 
             byte result = ClassifyUncached(zdo, prefab);
-            // Кэшируем только если сцена готова (иначе GetPrefab вернёт null)
             if (ZNetScene.instance) _cache[prefab] = result;
             return result;
         }
@@ -121,29 +119,17 @@
             if (!ZNetScene.instance) return REST;
 
             GameObject go = ZNetScene.instance.GetPrefab(prefab);
-            if (!go)
-            {
-                // Если префаб не найден, но объект приоритетный — считаем мобильным
-                return zdo.Type == ZDO.ObjectType.Prioritized ? MOBILE : REST;
-            }
+            if (!go) return zdo.Type == ZDO.ObjectType.Prioritized ? MOBILE : REST;
 
-            // Снаряды
             if (go.GetComponent<Projectile>()) return PROJECTILE;
-
-            // Мобы (все персонажи кроме игрока — игрок уже отфильтрован выше)
             if (go.GetComponent<Character>()) return MOBILE;
-
-            // Корабли — критично для синхронизации
             if (go.GetComponent<Ship>()) return MOBILE;
-
-            // Приоритетные объекты ванилы (корабли с игроками и т.п.)
             if (zdo.Type == ZDO.ObjectType.Prioritized) return MOBILE;
 
             return REST;
         }
 
-        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.ServerSortSendZDOS))]
-        [HarmonyPostfix]
+        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.ServerSortSendZDOS)),HarmonyPostfix]
         [HarmonyPriority(Priority.First)]
         private static void ServerSortSendZDOS_Postfix(List<ZDO> objects)
         {
@@ -151,8 +137,7 @@
             Partition(objects);
         }
 
-        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.ClientSortSendZDOS))]
-        [HarmonyPostfix]
+        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.ClientSortSendZDOS)),HarmonyPostfix]
         [HarmonyPriority(Priority.First)]
         private static void ClientSortSendZDOS_Postfix(List<ZDO> objects)
         {
@@ -160,12 +145,20 @@
             Partition(objects);
         }
 
-        // Очистка кэша при выгрузке мира
-        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.ShutDown))]
-        [HarmonyPostfix]
+        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.ShutDown)),HarmonyPostfix]
         private static void ClearCache() => _cache.Clear();
 
-        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.Update)), HarmonyTranspiler]
+
+        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.SendZDOToPeers2)), HarmonyPrefix]
+        private static bool ZDOMan_SendZDOToPeers2_Patch(ZDOMan __instance, float dt)
+        {
+            if (!VBNetTweaks.c_ModuleZDOOptimization.Value) return true;
+
+            OptimizedSendZDOToPeers(__instance, dt);
+            return false;
+        }
+
+      /*  [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.Update)), HarmonyTranspiler]
         private static IEnumerable<CodeInstruction> ZDOManUpdateTranspiler(IEnumerable<CodeInstruction> instructions)
         {
             CodeMatcher codeMatcher = new CodeMatcher(instructions).Start();
@@ -179,7 +172,7 @@
 
             codeMatcher.SetOperandAndAdvance(AccessTools.Method(typeof(ZDOMan_Patch), nameof(ZDOMan_Patch.OptimizedSendZDOToPeers)));
             return codeMatcher.InstructionEnumeration();
-        }
+        }*/
 
         [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.SendZDOs)), HarmonyTranspiler]
         public static IEnumerable<CodeInstruction> SendZDOs_QueueLimitFix(IEnumerable<CodeInstruction> instructions)
@@ -205,8 +198,7 @@
             return codes;
         }
 
-        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.SendZDOs))]
-        [HarmonyPrefix]
+        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.SendZDOs)),HarmonyPrefix]
         private static void SendZDOs_RefreshInterestPosition(ZDOMan.ZDOPeer peer)
         {
             if (!VBNetTweaks.c_ModuleZDOOptimization.Value) return;
@@ -218,8 +210,7 @@
             if (charZdo != null) peer.m_peer.m_refPos = charZdo.GetPosition();
         }
 
-        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.AddPeer))]
-        [HarmonyPostfix]
+        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.AddPeer)),HarmonyPostfix]
         private static void AddPeer_Postfix(ZDOMan __instance, ZNetPeer netPeer)
         {
             if (!Helper._buffers.TryGetValue(netPeer.m_rpc, out var packages)) return;
