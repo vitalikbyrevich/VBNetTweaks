@@ -21,7 +21,7 @@ namespace VBNetTweaks
     public class VBNetTweaks : BaseUnityPlugin
     {
         private const string ModName = "VBNetTweaks";
-        private const string ModVersion = "0.4.1.19";
+        private const string ModVersion = "0.4.1.21";
         private const string ModGUID = "VitByr.VBNetTweaks";
         public static VBNetTweaks Instance { get; private set; }
         public CustomRPC _configSyncRPC;
@@ -79,12 +79,11 @@ namespace VBNetTweaks
             _harmony = new Harmony(ModGUID);
             
             _harmony.PatchAll(typeof(MiniMap_Patch));
+            _harmony.PatchAll(typeof(NetStats_Patch));
             _harmony.PatchAll(typeof(Ship_Patch));
-            _harmony.PatchAll(typeof(ZDO_Patch));
             _harmony.PatchAll(typeof(ZDOMan_Patch));
             _harmony.PatchAll(typeof(ZNet_Patch));
             _harmony.PatchAll(typeof(ZSteamSocket_Patch));
-            _harmony.PatchAll(typeof(NetStats_Patch));
 
             Helper.LogDebug("Режим отладки включен");
         }

@@ -62,7 +62,6 @@
     <Compile Include="Patches\MiniMap_Patch.cs" />
     <Compile Include="Patches\NetStats_Patch.cs" />
     <Compile Include="Patches\ZDOMan_Patch.cs" />
-    <Compile Include="Patches\ZDO_Patch.cs" />
     <None Include="0\VFXOrphanCleanup.cs" />
     <Compile Include="Patches\Ship_Patch.cs" />
     <Compile Include="Patches\ZNet_Patch.cs" />
@@ -70,6 +69,7 @@
     <None Include="0\ZDODeltaSync.cs" />
     <None Include="0\ZDORemoval.cs" />
     <None Include="0\ZDOSorting.cs" />
+    <None Include="0\ZDO_Patch.cs" />
     <None Include="0\ZNetScene_Patch.cs" />
     <None Include="0\ZNet_Paths.cs" />
     <None Include="0\ZoneOwnerManager.cs" />
