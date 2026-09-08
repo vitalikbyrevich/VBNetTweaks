@@ -3,183 +3,168 @@
     [HarmonyPatch]
     public static class ZDOMan_Patch
     {
+        private static float _budget;
+        private static int _cursor;
+
+        private static float PerPeerRate(int peerCount, float interval)
+        {
+            float baseRate = 1f / Mathf.Max(interval, 0.01f);
+            if (peerCount <= 0) return 0f;
+            // Малые серверы (< 15 пиров) получают буст до 1.5×
+            return baseRate * Mathf.Max(1f, Mathf.Min(1.5f, 15f / peerCount));
+        }
+
         public static void OptimizedSendZDOToPeers(ZDOMan man, float dt)
         {
             try
             {
                 int count = man.m_peers.Count;
-                if (count == 0) return;
-
-                man.m_sendTimer += dt;
-
-                GetAdaptiveParams(count, out float interval, out int maxPeers);
-
-                if (man.m_sendTimer < interval) return;
-                man.m_sendTimer -= interval;
-
-                int start = (man.m_nextSendPeer >= 0) ? man.m_nextSendPeer : 0;
-                int processed = 0;
-
-                for (int i = 0; i < maxPeers; i++)
+                if (count == 0)
                 {
-                    int idx = (start + i) % count;
-                    processed++;
-                    ZDOMan.ZDOPeer peer = man.m_peers[idx];
-                    if (peer?.m_peer?.m_socket?.IsConnected() != true) continue;
-                    man.SendZDOs(peer, flush: false);
+                    _budget = 0f;
+                    return;
                 }
 
-                man.m_nextSendPeer = (start + processed) % count;
+                float interval = Helper.GetSendInterval();
+                _budget += count * dt * PerPeerRate(count, interval);
+
+                int num = (int)_budget;
+                _budget -= num;
+
+                if (num <= 0) return;
+
+                int maxPerFrame = VBNetTweaks.c_MaxPeersPerFrame.Value;
+                if (maxPerFrame > 0) num = Mathf.Min(num, maxPerFrame);
+                if (num > count)
+                {
+                    num = count;
+                    _budget = 0f;
+                }
+
+                for (int i = 0; i < num; i++)
+                {
+                    ZDOMan.ZDOPeer peer = man.m_peers[(_cursor + i) % count];
+                    if (peer?.m_peer?.m_socket?.IsConnected() == true) man.SendZDOs(peer, false);
+                }
+
+                _cursor = (_cursor + num) % count;
+
+                // Гасим ванильные поля, чтобы не мешали
+                man.m_sendTimer = 0f;
+                man.m_nextSendPeer = -1;
             }
             catch (Exception ex)
             {
                 Helper.LogDebug($"Error in OptimizedSendZDOToPeers: {ex.Message}");
-              //  man.SendZDOToPeers2(dt);
             }
         }
 
-        private static void GetAdaptiveParams(int peerCount, out float interval, out int maxPeers)
+        private static readonly Dictionary<int, float> _prefabBonuses = new Dictionary<int, float>(256);
+        private static readonly List<ZDO> _prioritized = new List<ZDO>(64);
+        private static readonly List<ZDO> _remaining = new List<ZDO>(512);
+
+        private static float GetSendBonus(ZDO zdo)
         {
-            interval = Helper.GetSendInterval();
+            if (zdo == null) return 0f;
+            int prefab = zdo.GetPrefab();
+            if (_prefabBonuses.TryGetValue(prefab, out float cached)) return cached;
 
-            int divisor = VBNetTweaks.c_PeerCycleDivisor.Value;
-            maxPeers = Mathf.CeilToInt((float)peerCount / divisor);
+            float bonus = 0f;
+            if (ZNetScene.instance)
+            {
+                GameObject go = ZNetScene.instance.GetPrefab(prefab);
+                if (go)
+                {
+                    if (go.GetComponent<Player>())    bonus = 120f;
+                    else if (go.GetComponent<Ship>()) bonus = 80f;
+                    else if (go.GetComponent<Character>()) bonus = 40f;
+                }
+            }
 
-            maxPeers = Mathf.Clamp(maxPeers, 1, peerCount);
+            _prefabBonuses[prefab] = bonus;
+            return bonus;
         }
-        
-        
-        private const byte PLAYER     = 0;
-        private const byte MOBILE     = 1; // Characters + Ships
-        private const byte PROJECTILE = 2;
-        private const byte REST       = 3;
-        private const int BUCKET_COUNT = 4;
 
-        private static readonly List<ZDO>[] Buckets = new List<ZDO>[BUCKET_COUNT]
-        {
-            new List<ZDO>(32),   // Player
-            new List<ZDO>(64),   // Mobile
-            new List<ZDO>(64),   // Projectile
-            new List<ZDO>(512)   // Rest
-        };
-
-        private static readonly int[] Counts = new int[BUCKET_COUNT];
-        private static readonly Dictionary<int, byte> _cache = new Dictionary<int, byte>(256);
-        private static readonly int PlayerHash = "Player".GetStableHashCode();
-
-        private static void Partition(List<ZDO> objects)
+        private static void ApplyPriority(List<ZDO> objects, Comparison<ZDO> compare)
         {
             if (objects == null || objects.Count < 2) return;
 
-            for (int i = 0; i < BUCKET_COUNT; i++)
-            {
-                Buckets[i].Clear();
-                Counts[i] = 0;
-            }
-
-            bool alreadySorted = true;
-            byte prevRank = 0;
+            _prioritized.Clear();
+            _remaining.Clear();
 
             for (int i = 0; i < objects.Count; i++)
             {
                 ZDO zdo = objects[i];
-                byte rank = Classify(zdo);
-                if (rank < prevRank) alreadySorted = false;
-                prevRank = rank;
-                Buckets[rank].Add(zdo);
-                Counts[rank]++;
-            }
-
-            if (!alreadySorted)
-            {
-                int idx = 0;
-                for (int b = 0; b < BUCKET_COUNT; b++)
+                float bonus = GetSendBonus(zdo);
+                if (bonus > 0f)
                 {
-                    var bucket = Buckets[b];
-                    for (int i = 0; i < bucket.Count; i++) objects[idx++] = bucket[i];
+                    zdo.m_tempSortValue -= bonus;
+                    _prioritized.Add(zdo);
                 }
+                else _remaining.Add(zdo);
             }
+
+            if (_prioritized.Count == 0)
+            {
+                _remaining.Clear();
+                return;
+            }
+
+            _prioritized.Sort(compare);
+
+            // Merge обратно в objects
+            int li = 0, ri = 0, idx = 0;
+            while (li < _prioritized.Count && ri < _remaining.Count)
+            {
+                if (compare(_prioritized[li], _remaining[ri]) <= 0) objects[idx++] = _prioritized[li++];
+                else objects[idx++] = _remaining[ri++];
+            }
+            while (li < _prioritized.Count) objects[idx++] = _prioritized[li++];
+            while (ri < _remaining.Count)  objects[idx++] = _remaining[ri++];
+
+            _prioritized.Clear();
+            _remaining.Clear();
         }
 
-        private static byte Classify(ZDO zdo)
-        {
-            if (zdo == null) return REST;
-            int prefab = zdo.GetPrefab();
 
-            if (prefab == PlayerHash) return PLAYER;
-            if (_cache.TryGetValue(prefab, out byte cached)) return cached;
-
-            byte result = ClassifyUncached(zdo, prefab);
-            if (ZNetScene.instance) _cache[prefab] = result;
-            return result;
-        }
-
-        private static byte ClassifyUncached(ZDO zdo, int prefab)
-        {
-            if (!ZNetScene.instance) return REST;
-
-            GameObject go = ZNetScene.instance.GetPrefab(prefab);
-            if (!go) return zdo.Type == ZDO.ObjectType.Prioritized ? MOBILE : REST;
-
-            if (go.GetComponent<Projectile>()) return PROJECTILE;
-            if (go.GetComponent<Character>()) return MOBILE;
-            if (go.GetComponent<Ship>()) return MOBILE;
-            if (zdo.Type == ZDO.ObjectType.Prioritized) return MOBILE;
-
-            return REST;
-        }
-
-        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.ServerSortSendZDOS)),HarmonyPostfix]
+        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.ServerSortSendZDOS)), HarmonyPostfix]
         [HarmonyPriority(Priority.First)]
         private static void ServerSortSendZDOS_Postfix(List<ZDO> objects)
         {
             if (!VBNetTweaks.c_ModuleZDOOptimization.Value) return;
-            Partition(objects);
+            ApplyPriority(objects, ZDOMan.ServerSendCompare);
         }
 
-        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.ClientSortSendZDOS)),HarmonyPostfix]
+        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.ClientSortSendZDOS)), HarmonyPostfix]
         [HarmonyPriority(Priority.First)]
         private static void ClientSortSendZDOS_Postfix(List<ZDO> objects)
         {
             if (!VBNetTweaks.c_ModuleZDOOptimization.Value) return;
-            Partition(objects);
+            ApplyPriority(objects, ZDOMan.ClientSendCompare);
         }
 
-        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.ShutDown)),HarmonyPostfix]
-        private static void ClearCache() => _cache.Clear();
-
+        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.ShutDown)), HarmonyPostfix]
+        private static void ClearCaches()
+        {
+            _prefabBonuses.Clear();
+            _budget = 0f;
+            _cursor = 0;
+        }
 
         [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.SendZDOToPeers2)), HarmonyPrefix]
         private static bool ZDOMan_SendZDOToPeers2_Patch(ZDOMan __instance, float dt)
         {
             if (!VBNetTweaks.c_ModuleZDOOptimization.Value) return true;
-
             OptimizedSendZDOToPeers(__instance, dt);
             return false;
         }
 
-      /*  [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.Update)), HarmonyTranspiler]
-        private static IEnumerable<CodeInstruction> ZDOManUpdateTranspiler(IEnumerable<CodeInstruction> instructions)
-        {
-            CodeMatcher codeMatcher = new CodeMatcher(instructions).Start();
-            codeMatcher.MatchStartForward(new CodeMatch(OpCodes.Call, AccessTools.Method(typeof(ZDOMan), nameof(ZDOMan.SendZDOToPeers2))));
-            if (codeMatcher.IsInvalid)
-            {
-                Helper.LogDebug("WARNING: SendZDOToPeers2 not found");
-                return instructions;
-            }
-            else Helper.LogDebug("SendZDOToPeers2 success replace to OptimizedSendZDOToPeers");
-
-            codeMatcher.SetOperandAndAdvance(AccessTools.Method(typeof(ZDOMan_Patch), nameof(ZDOMan_Patch.OptimizedSendZDOToPeers)));
-            return codeMatcher.InstructionEnumeration();
-        }*/
-
         [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.SendZDOs)), HarmonyTranspiler]
-        public static IEnumerable<CodeInstruction> SendZDOs_QueueLimitFix(IEnumerable<CodeInstruction> instructions)
+        public static IEnumerable<CodeInstruction> SendZDOs_QueueLimitFix(
+            IEnumerable<CodeInstruction> instructions)
         {
             var codes = new List<CodeInstruction>(instructions);
             int replacedCount = 0;
-
             var getQueueLimitMethod = AccessTools.Method(typeof(Helper), nameof(Helper.GetQueueLimit));
 
             for (int i = 0; i < codes.Count; i++)
@@ -198,7 +183,7 @@
             return codes;
         }
 
-        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.SendZDOs)),HarmonyPrefix]
+        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.SendZDOs)), HarmonyPrefix]
         private static void SendZDOs_RefreshInterestPosition(ZDOMan.ZDOPeer peer)
         {
             if (!VBNetTweaks.c_ModuleZDOOptimization.Value) return;
@@ -210,12 +195,12 @@
             if (charZdo != null) peer.m_peer.m_refPos = charZdo.GetPosition();
         }
 
-        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.AddPeer)),HarmonyPostfix]
+        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.AddPeer)), HarmonyPostfix]
         private static void AddPeer_Postfix(ZDOMan __instance, ZNetPeer netPeer)
         {
             if (!Helper._buffers.TryGetValue(netPeer.m_rpc, out var packages)) return;
-
-            foreach (var pkg in packages) __instance.RPC_ZDOData(netPeer.m_rpc, pkg);
+            foreach (var pkg in packages)
+                __instance.RPC_ZDOData(netPeer.m_rpc, pkg);
             Helper._buffers.Remove(netPeer.m_rpc);
         }
     }

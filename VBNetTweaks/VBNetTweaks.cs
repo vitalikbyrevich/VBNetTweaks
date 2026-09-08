@@ -21,7 +21,7 @@ namespace VBNetTweaks
     public class VBNetTweaks : BaseUnityPlugin
     {
         private const string ModName = "VBNetTweaks";
-        private const string ModVersion = "0.4.1.21";
+        private const string ModVersion = "0.4.1.23";
         private const string ModGUID = "VitByr.VBNetTweaks";
         public static VBNetTweaks Instance { get; private set; }
         public CustomRPC _configSyncRPC;
@@ -53,7 +53,7 @@ namespace VBNetTweaks
         public static ConfigEntry<float> c_MapMaxPredictionSpeed;
         
         public static ConfigEntry<float> c_SendInterval;
-        public static ConfigEntry<int> c_PeerCycleDivisor;
+        public static ConfigEntry<int> c_MaxPeersPerFrame;
         
         private Harmony _harmony;
 
@@ -96,8 +96,8 @@ namespace VBNetTweaks
             var debugSection = "01 - Debug";
             c_DebugEnabled = Config.Bind(debugSection, "DebugEnabled", false, c_ConfigLanguage.Value == Language.Russian ? "Включить отладочный вывод" : "Enable debug output");
             c_VerboseLogging = Config.Bind(debugSection, "VerboseLogging", false, c_ConfigLanguage.Value == Language.Russian ? "Включить подробное логирование" : "Enable verbose logging");
-            c_NetStatsLogging = Config.Bind(debugSection, "NetStatsLogging", true, c_ConfigLanguage.Value == Language.Russian
-                ? "Логирование статистики отправки/приёма пакетов (раз в интервал)." : "Log send/receive packet statistics (once per interval).");
+            c_NetStatsLogging = Config.Bind(debugSection, "NetStatsLogging", false, c_ConfigLanguage.Value == Language.Russian
+                ? "Логирование статистики отправки/приёма пакетов (раз в интервал). Пинг становится нестабильным" : "Log send/receive packet statistics (once per interval). The ping is becoming unstable.");
             c_NetStatsInterval = Config.Bind(debugSection, "NetStatsIntervalSec", 10, c_ConfigLanguage.Value == Language.Russian ? "Интервал дампа статистики, сек." : "Statistics dump interval, sec.");
 
 
@@ -111,10 +111,10 @@ namespace VBNetTweaks
                 ? "Оптимизация частоты обновления ZDO (снижает трафик)" : "Optimize ZDO update frequency (reduces traffic)", synced: true);
             
             var steamSection = "03 - Steam Settings";
-            c_SteamSendRateMaxKB = _clientConfig.BindConfig(steamSection, "MaxRateKB", 2048, c_ConfigLanguage.Value == Language.Russian 
+            c_SteamSendRateMaxKB = _clientConfig.BindConfig(steamSection, "MaxRateKB", 8192, c_ConfigLanguage.Value == Language.Russian 
                 ? "Максимальная скорость отправки Steam. Vanilla = ~150KB" : "Maximum Steam send rate. Vanilla = ~150KB", synced: true);
 
-            c_SteamSendBufferSizeKB = _clientConfig.BindConfig(steamSection, "SendBufferSizeKB", 1024, c_ConfigLanguage.Value == Language.Russian
+            c_SteamSendBufferSizeKB = _clientConfig.BindConfig(steamSection, "SendBufferSizeKB", 4096, c_ConfigLanguage.Value == Language.Russian
                 ? "Размер буфера отправки Steam в KB. Vanilla = ~512KB" : "Steam send buffer size in KB. Vanilla = ~512KB", synced: true);
 
             c_SteamTimeoutConnected = _clientConfig.BindConfig(steamSection, "TimeoutConnected", 60000f, c_ConfigLanguage.Value == Language.Russian 
@@ -126,11 +126,10 @@ namespace VBNetTweaks
             c_SendInterval = _clientConfig.BindConfig(serverSection, "SendInterval", 0.04f, c_ConfigLanguage.Value == Language.Russian 
                 ? "Интервал отправки данных. Vanilla = 0.05" : "Data send interval. Vanilla = 0.05", synced: true);
                 
-            c_PeerCycleDivisor = _clientConfig.BindConfig(serverSection, "PeerCycleDivisor", 3, c_ConfigLanguage.Value == Language.Russian 
-                    ? "Делитель для расчёта пиров за цикл. Формула: ceil(всего_пиров / делитель).\n" + "Больше значение → больше циклов на полный оборот → реже обновление каждого пира.\n" + "Примеры: 2 = оборот за 2 цикла, 3 = за 3 цикла, 5 = за 5 циклов." 
-                    : "Divisor for peers-per-cycle calculation. Formula: ceil(total_peers / divisor).\n" + "Higher value → more cycles per full rotation → less frequent updates per peer.\n" + "Examples: 2 = rotation in 2 cycles, 3 = in 3 cycles, 5 = in 5 cycles.", synced: true);
+            c_MaxPeersPerFrame = _clientConfig.BindConfig(serverSection, "MaxPeersPerFrame", 0, c_ConfigLanguage.Value == Language.Russian
+                    ? "Макс. пиров за один кадр (0 = без лимита, бюджет сам решает)." : "Max peers per frame (0 = unlimited, budget decides).", synced: true);
             
-            c_ZDOQueueLimit = _clientConfig.BindConfig(serverSection, "ZDOQueueLimit", 30720, c_ConfigLanguage.Value == Language.Russian 
+            c_ZDOQueueLimit = _clientConfig.BindConfig(serverSection, "ZDOQueueLimit", 20480, c_ConfigLanguage.Value == Language.Russian 
                 ? "Размер буфера отправки ZDO пакетов (vanilla = 10240 байт). Требуется рестарт" : "ZDO packet send buffer size (vanilla = 10240 bytes). Required Restart", synced: true);
             
             
@@ -165,7 +164,7 @@ namespace VBNetTweaks
                 pkg.Write(c_MapMaxPredictionSpeed.Value);
                 
                 pkg.Write(c_SendInterval.Value);
-                pkg.Write(c_PeerCycleDivisor.Value);
+                pkg.Write(c_MaxPeersPerFrame.Value);
             }
             catch (Exception e)
             {
@@ -201,7 +200,7 @@ namespace VBNetTweaks
                 c_MapMaxPredictionSpeed.Value = pkg.ReadSingle();
                 
                 c_SendInterval.Value = pkg.ReadSingle();
-                c_PeerCycleDivisor.Value = pkg.ReadInt();
+                c_MaxPeersPerFrame.Value = pkg.ReadInt();
             }
             catch (Exception e)
             {

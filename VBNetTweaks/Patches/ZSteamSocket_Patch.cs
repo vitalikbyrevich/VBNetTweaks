@@ -43,12 +43,8 @@
 
            SetConfigFloat(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_TimeoutConnected, Helper.GetTimeoutConnected());
            SetConfigFloat(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_TimeoutInitial, 30000f);
-           SetConfigInt(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendRateMin, Helper.GetSteamSendRateMaxKB() / 4);
            SetConfigInt(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendRateMax, Helper.GetSteamSendRateMaxKB());
            SetConfigInt(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendBufferSize, Helper.GetSteamSendBufferSizeKB());
-           SetConfigInt((ESteamNetworkingConfigValue)47, 2048 * 1024); // RecvBufferSize
-           SetConfigInt((ESteamNetworkingConfigValue)48, 1024); // RecvBufferMessages
-           SetConfigInt(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_NagleTime, 2500);
        }
         
         [HarmonyPatch(typeof(ZSteamSocket), nameof(ZSteamSocket.Send)),HarmonyTranspiler]
