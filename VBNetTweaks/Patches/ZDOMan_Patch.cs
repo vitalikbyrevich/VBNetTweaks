@@ -112,7 +112,6 @@
 
             _prioritized.Sort(compare);
 
-            // Merge обратно в objects
             int li = 0, ri = 0, idx = 0;
             while (li < _prioritized.Count && ri < _remaining.Count)
             {

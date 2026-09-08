@@ -21,7 +21,7 @@ namespace VBNetTweaks
     public class VBNetTweaks : BaseUnityPlugin
     {
         private const string ModName = "VBNetTweaks";
-        private const string ModVersion = "0.4.1.23";
+        private const string ModVersion = "0.4.1.26";
         private const string ModGUID = "VitByr.VBNetTweaks";
         public static VBNetTweaks Instance { get; private set; }
         public CustomRPC _configSyncRPC;
@@ -41,8 +41,6 @@ namespace VBNetTweaks
         public static ConfigEntry<bool> c_ModuleZDOOptimization;
         public static ConfigEntry<bool> c_ModuleShipSync;
         public static ConfigEntry<bool> c_ModuleMapPositionSync;
-        public static ConfigEntry<bool> c_ModuleRevisionOptimization;
-        
         
         public static ConfigEntry<int> c_SteamSendRateMaxKB;
         public static ConfigEntry<int> c_SteamSendBufferSizeKB;
@@ -80,7 +78,7 @@ namespace VBNetTweaks
             
             _harmony.PatchAll(typeof(MiniMap_Patch));
             _harmony.PatchAll(typeof(NetStats_Patch));
-            _harmony.PatchAll(typeof(Ship_Patch));
+        //    _harmony.PatchAll(typeof(Ship_Patch));
             _harmony.PatchAll(typeof(ZDOMan_Patch));
             _harmony.PatchAll(typeof(ZNet_Patch));
             _harmony.PatchAll(typeof(ZSteamSocket_Patch));
@@ -107,14 +105,13 @@ namespace VBNetTweaks
             c_ModuleShipSync = _clientConfig.BindConfig(modulesSection, "ShipSync", true, c_ConfigLanguage.Value == Language.Russian ? "Синхронизация на кораблях" : "On ship synchronization", synced: true);
             c_ModuleMapPositionSync = _clientConfig.BindConfig(modulesSection, "MapPositionSync", true, c_ConfigLanguage.Value == Language.Russian 
                 ? "Включить плавные маркеры игроков на карте\nУлучшает отображение позиций игроков" : "Enable smooth player markers on map\nImproves display of player positions", synced: true);
-            c_ModuleRevisionOptimization = _clientConfig.BindConfig(modulesSection, "RevisionOptimization", true, c_ConfigLanguage.Value == Language.Russian 
-                ? "Оптимизация частоты обновления ZDO (снижает трафик)" : "Optimize ZDO update frequency (reduces traffic)", synced: true);
+        
             
             var steamSection = "03 - Steam Settings";
-            c_SteamSendRateMaxKB = _clientConfig.BindConfig(steamSection, "MaxRateKB", 8192, c_ConfigLanguage.Value == Language.Russian 
+            c_SteamSendRateMaxKB = _clientConfig.BindConfig(steamSection, "MaxRateKB", 16384, c_ConfigLanguage.Value == Language.Russian 
                 ? "Максимальная скорость отправки Steam. Vanilla = ~150KB" : "Maximum Steam send rate. Vanilla = ~150KB", synced: true);
 
-            c_SteamSendBufferSizeKB = _clientConfig.BindConfig(steamSection, "SendBufferSizeKB", 4096, c_ConfigLanguage.Value == Language.Russian
+            c_SteamSendBufferSizeKB = _clientConfig.BindConfig(steamSection, "SendBufferSizeKB", 8192, c_ConfigLanguage.Value == Language.Russian
                 ? "Размер буфера отправки Steam в KB. Vanilla = ~512KB" : "Steam send buffer size in KB. Vanilla = ~512KB", synced: true);
 
             c_SteamTimeoutConnected = _clientConfig.BindConfig(steamSection, "TimeoutConnected", 60000f, c_ConfigLanguage.Value == Language.Russian 
@@ -123,13 +120,13 @@ namespace VBNetTweaks
             
             
             var serverSection = "04 - ZDO Settings";
-            c_SendInterval = _clientConfig.BindConfig(serverSection, "SendInterval", 0.04f, c_ConfigLanguage.Value == Language.Russian 
+            c_SendInterval = _clientConfig.BindConfig(serverSection, "SendInterval", 0.035f, c_ConfigLanguage.Value == Language.Russian 
                 ? "Интервал отправки данных. Vanilla = 0.05" : "Data send interval. Vanilla = 0.05", synced: true);
                 
             c_MaxPeersPerFrame = _clientConfig.BindConfig(serverSection, "MaxPeersPerFrame", 0, c_ConfigLanguage.Value == Language.Russian
                     ? "Макс. пиров за один кадр (0 = без лимита, бюджет сам решает)." : "Max peers per frame (0 = unlimited, budget decides).", synced: true);
             
-            c_ZDOQueueLimit = _clientConfig.BindConfig(serverSection, "ZDOQueueLimit", 20480, c_ConfigLanguage.Value == Language.Russian 
+            c_ZDOQueueLimit = _clientConfig.BindConfig(serverSection, "ZDOQueueLimit", 30720, c_ConfigLanguage.Value == Language.Russian 
                 ? "Размер буфера отправки ZDO пакетов (vanilla = 10240 байт). Требуется рестарт" : "ZDO packet send buffer size (vanilla = 10240 bytes). Required Restart", synced: true);
             
             
